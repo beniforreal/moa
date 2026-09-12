@@ -277,7 +277,7 @@ async function handle(req,ctx){
 
   if(route==='posts'){
     await row('clients',b.client_id);
-    if(!['naver','instagram'].includes(b.platform))throw new HttpError('서비스를 선택해 주세요.');
+    if(!['naver','instagram','schedule_plan','schedule_general','schedule_other'].includes(b.platform))throw new HttpError('카테고리를 선택해 주세요.');
     if(b.scheduled_at&&isNaN(Date.parse(b.scheduled_at)))throw new HttpError('일정을 확인해 주세요.');
     if(b.image_url){const image=new URL(b.image_url);if(image.protocol!=='https:')throw new HttpError('공개 HTTPS 이미지 주소를 입력해 주세요.')}
     const body={client_id:b.client_id,title:textValue(b.title,200),body:textValue(b.body,10000),platform:b.platform,image_url:b.image_url||null,scheduled_at:b.scheduled_at||null,status:b.scheduled_at?'planned':'draft',updated_at:new Date().toISOString()};
@@ -289,6 +289,7 @@ async function handle(req,ctx){
   if(route==='posts/publish'){
     const p=await row('posts',b.id);
     if(!['draft','planned'].includes(p.status))throw new HttpError('이미 처리 중이거나 발행된 게시물입니다.',409);
+    if(p.platform.startsWith('schedule_'))throw new HttpError('일정 카테고리는 발행 대상이 아닙니다.',409);
     if(p.platform==='naver'){
       const pub=new URL(textValue(b.url,2000));
       if(pub.protocol!=='https:'||!['blog.naver.com','m.blog.naver.com'].includes(pub.hostname))throw new HttpError('실제 네이버 블로그 발행 주소를 입력해 주세요.');
