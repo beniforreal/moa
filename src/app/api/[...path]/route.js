@@ -25,7 +25,13 @@ async function upsertIntegration(clientId,platform,patch){
 async function upsertInbox(item){
   const existing=await db('inbox_items',`platform=eq.${encodeURIComponent(item.platform)}&external_id=eq.${encodeURIComponent(item.external_id)}`);
   if(existing[0]){
-    await db('inbox_items',`id=eq.${existing[0].id}`,'PATCH',{...item,updated_at:new Date().toISOString()});
+    // Webhook/collector 재전송은 이미 사용자가 처리한 상태를 되돌리지 않습니다.
+    const {status:_incomingStatus,...rest}=item;
+    await db('inbox_items',`id=eq.${existing[0].id}`,'PATCH',{
+      ...rest,
+      status:existing[0].status||_incomingStatus||'new',
+      updated_at:new Date().toISOString()
+    });
     return existing[0].id;
   }
   const created=await db('inbox_items','','POST',item);
@@ -198,6 +204,33 @@ async function handle(req,ctx){
     const body={name:textValue(b.name,100),category:String(b.category||'').slice(0,100),tone:String(b.tone||'').slice(0,1000),policy:String(b.policy||'').slice(0,5000)};
     if(b.id){await row('clients',b.id);await db('clients',`id=eq.${b.id}`,'PATCH',body)}
     else await db('clients','','POST',body);
+    return json({ok:true});
+  }
+
+  if(route==='clients/delete'){
+    const clientRow=await row('clients',b.id);
+    // FK 순서에 맞춰 고객사 관련 운영 데이터를 함께 정리합니다.
+    await db('outbox_jobs',`client_id=eq.${clientRow.id}`,'DELETE');
+    await db('notifications',`client_id=eq.${clientRow.id}`,'DELETE');
+    await db('inbox_items',`client_id=eq.${clientRow.id}`,'DELETE');
+    await db('posts',`client_id=eq.${clientRow.id}`,'DELETE');
+    await db('integrations',`client_id=eq.${clientRow.id}`,'DELETE');
+    await db('clients',`id=eq.${clientRow.id}`,'DELETE');
+    await audit('client_deleted',clientRow.id);
+    return json({ok:true});
+  }
+
+  if(route==='inbox/confirm'){
+    const item=await row('inbox_items',b.id);
+    if(item.platform!=='naver')throw new HttpError('네이버 알림만 확인 처리할 수 있습니다.',409);
+    await db('inbox_items',`id=eq.${item.id}`,'PATCH',{
+      status:'confirmed',
+      draft:null,
+      approved_text:null,
+      approved_at:null,
+      updated_at:new Date().toISOString()
+    });
+    await audit('naver_notice_confirmed',item.id);
     return json({ok:true});
   }
 
