@@ -93,7 +93,7 @@ export default function App(){
   async function savePost(e){
     e.preventDefault();const b=Object.fromEntries(new FormData(e.currentTarget));
     if(b.scheduled_at)b.scheduled_at=new Date(b.scheduled_at+'+09:00').toISOString();
-    await run(async()=>{await api('posts',{...b,id:modal?.item?.id});await refresh();setModal(null);setToast('게시물을 저장했습니다.')});
+    await run(async()=>{await api('posts',{...b,id:modal?.item?.id});await refresh();setToast('게시물을 저장했습니다.')});
   }
 
   async function reply(action){
@@ -237,7 +237,7 @@ export default function App(){
 
     {toast&&<div className="toast"><Check size={18}/>{toast}<button onClick={()=>setToast('')}><X size={16}/></button></div>}
 
-    {modal&&<div className="modal-overlay" onClick={e=>{if(e.target===e.currentTarget)setModal(null)}}><section className={'modal '+(modal.type==='post'?'wide':'')}>
+    {modal&&<div className="modal-overlay" onClick={e=>{if(e.target===e.currentTarget&&modal.type!=='post')setModal(null)}}><section className={'modal '+(modal.type==='post'?'wide':'')}>
       <button className="modal-close icon-btn" onClick={()=>setModal(null)}><X size={22}/></button>
 
       {modal.type==='client'&&<form onSubmit={saveClient}><span className="eyebrow">CLIENT PROFILE</span><h2>{modal.item?'고객사 수정':'고객사 추가'}</h2><label>고객사명<input name="name" required defaultValue={modal.item?.name}/></label><label>업종<input name="category" defaultValue={modal.item?.category}/></label><label>브랜드 말투<input name="tone" defaultValue={modal.item?.tone}/></label><label>응대 정책<textarea name="policy" rows={5} defaultValue={modal.item?.policy}/></label><button className="primary full" disabled={busy}>저장</button></form>}
