@@ -47,6 +47,7 @@ export default function App(){
   const [draft,setDraft]=useState('');
   const [search,setSearch]=useState('');
   const [mobile,setMobile]=useState(false);
+  const [sidebarCollapsed,setSidebarCollapsed]=useState(false);
   const [platformFilter,setPlatformFilter]=useState('all');
   const [monthOffset,setMonthOffset]=useState(0);
 
@@ -129,32 +130,30 @@ export default function App(){
   const account=(clientId,platform)=>data.accounts.find(a=>a.client_id===clientId&&a.platform===platform);
 
   return <div className="shell">
-    <aside className={'sidebar '+(mobile?'open':'')}>
-      <a className="brand" href="/" aria-label="모아 홈"><span className="brand-mark">m<span>•</span></span><strong>모아<span>moa</span></strong></a>
-      <div className="workspace"><span className="workspace-icon">P</span><span><b>개인 운영 워크스페이스</b><small>박찬양 · 마케팅 대행</small></span></div>
-      <span className="nav-label">WORKSPACE</span>
-      <nav>{nav.map(([id,name,Icon])=><button key={id} className={view===id?'active':''} onClick={()=>go(id)}><Icon size={19}/><span>{name}</span>{id==='inbox'&&pending.length>0&&<b className="count">{pending.length}</b>}</button>)}</nav>
-      <div className="sidebar-bottom">
-        <div className="approval-note"><ShieldCheck size={21}/><b>답변은 항상 승인 후 전송</b><p>AI는 초안만 만들고<br/>최종 전송은 직접 승인합니다.</p></div>
-        <div className="profile"><span className="avatar">박</span><span><b>단일 운영자</b><small>앱 내부 로그인 없음</small></span></div>
+    <aside className={'sidebar '+(mobile?'open ':'')+(sidebarCollapsed?'collapsed':'')}>
+      <div className="sidebar-head">
+        <a className="brand" href="/" aria-label="모아 홈"><span className="brand-mark">m<span>•</span></span><strong>모아<span>moa</span></strong></a>
+        <button className="sidebar-toggle" onClick={()=>setSidebarCollapsed(v=>!v)} aria-label={sidebarCollapsed?'사이드바 펼치기':'사이드바 접기'}>
+          {sidebarCollapsed?<ChevronRight size={17}/>:<ChevronLeft size={17}/>}
+        </button>
       </div>
+      <nav>{nav.map(([id,name,Icon])=><button key={id} title={sidebarCollapsed?name:undefined} className={view===id?'active':''} onClick={()=>go(id)}><Icon size={19}/><span>{name}</span>{id==='inbox'&&pending.length>0&&<b className="count">{pending.length}</b>}</button>)}</nav>
     </aside>
 
-    <div className="main">
+    <div className={'main '+(sidebarCollapsed?'expanded':'')}>
       <header className="topbar">
-        <div className="row"><button className="icon-btn mobile-menu" onClick={()=>setMobile(!mobile)} aria-label="메뉴"><Menu size={21}/></button><span className="breadcrumb">워크스페이스 <span>/</span> <b>{names[view]}</b></span></div>
-        <div className="top-actions"><span className="mode-pill live">LIVE DATA ONLY</span><button className="icon-btn" onClick={()=>run(refresh)} aria-label="새로고침"><RefreshCw size={18}/></button><button className="icon-btn" onClick={()=>setModal({type:'notifications'})} aria-label="알림"><Bell size={19}/>{data.notifications.length>0&&<i/>}</button><span className="avatar small">박</span></div>
+        <div className="row"><button className="icon-btn mobile-menu" onClick={()=>setMobile(!mobile)} aria-label="메뉴"><Menu size={21}/></button><span className="breadcrumb"><b>{names[view]}</b></span></div>
+        <div className="top-actions"><button className="icon-btn" onClick={()=>run(refresh)} aria-label="새로고침"><RefreshCw size={18}/></button><button className="icon-btn" onClick={()=>setModal({type:'notifications'})} aria-label="알림"><Bell size={19}/>{data.notifications.length>0&&<i/>}</button></div>
       </header>
 
       <main>
         <div className="page-heading">
-          <div><div className="eyebrow">YOUR SOCIAL WORKSPACE</div><h1>{view==='dashboard'?'실제 채널 데이터만 한곳에.':names[view]}</h1><p>{view==='dashboard'?'가상 데이터 없이 Instagram, 네이버 블로그, 카카오 상담 데이터를 모읍니다.':view==='settings'?'서비스별 공식 연결 방식과 수집기를 관리합니다.':view==='inbox'?'실제 댓글과 상담 메시지만 표시합니다.':'운영 중인 실제 데이터를 관리합니다.'}</p></div>
+          <div><h1>{names[view]}</h1></div>
           {view==='clients'?<button className="primary" onClick={()=>setModal({type:'client'})}><Plus size={18}/>고객사 추가</button>:view==='posts'?<button className="primary" disabled={!data.clients.length} onClick={()=>setModal({type:'post'})}><Plus size={18}/>게시물 작성</button>:null}
         </div>
 
         {view!=='settings'&&<div className="filterbar">
           <div className="select-wrap"><Building2 size={17}/><select value={client} onChange={e=>setClient(e.target.value)}><option value="all">모든 고객사</option>{data.clients.map(c=><option value={c.id} key={c.id}>{c.name}</option>)}</select></div>
-          <span className="muted">Supabase 실제 데이터 · {new Date().toLocaleDateString('ko-KR')}</span>
         </div>}
 
         {view==='dashboard'&&<>
@@ -200,7 +199,6 @@ export default function App(){
                 <textarea value={draft} maxLength={2000} onChange={e=>setDraft(e.target.value)} placeholder="AI 추천을 받거나 직접 답변을 작성하세요." disabled={['sent','sending'].includes(item.status)}/>
                 <div className="approval-steps"><span className={draft?'done':''}>1 작성</span><ArrowRight size={14}/><span className={item.status==='approved'||item.status==='sent'?'done':''}>2 승인</span><ArrowRight size={14}/><span className={item.status==='sent'?'done':''}>3 전송</span></div>
                 <div className="reply-actions"><button className="secondary" disabled={busy||!draft.trim()} onClick={()=>reply('save')}>초안 저장</button><div className="row"><button className="secondary" disabled={busy||!draft.trim()} onClick={()=>reply('approve')}><Check size={16}/>승인</button><button className="primary" disabled={busy||item.status!=='approved'||draft!==item.approved_text} onClick={()=>reply('send')}><Send size={15}/>승인 답변 전송</button></div></div>
-                {item.platform==='channel_talk'&&<p className="notice">채널톡은 현재 수신·AI 초안·승인 기반까지 연결했습니다. 메시지 전송 API는 채널의 OpenAPI 권한 확인 후 활성화됩니다.</p>}
               </div>}
             </>:<Empty text="왼쪽에서 실제 대화를 선택해 주세요."/>}
           </div>
