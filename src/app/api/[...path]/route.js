@@ -26,7 +26,7 @@ async function upsertInbox(item){
   const existing=await db('inbox_items',`platform=eq.${encodeURIComponent(item.platform)}&external_id=eq.${encodeURIComponent(item.external_id)}`);
   if(existing[0]){
     // Webhook/collector 재전송은 이미 사용자가 처리한 상태를 되돌리지 않습니다.
-    const {status:_incomingStatus,...rest}=item;
+    const {status:_incomingStatus,created_at:_incomingCreatedAt,...rest}=item;
     await db('inbox_items',`id=eq.${existing[0].id}`,'PATCH',{
       ...rest,
       status:existing[0].status||_incomingStatus||'new',
