@@ -4,19 +4,24 @@ export class HttpError extends Error {
   constructor(message,status=400){super(message);this.status=status}
 }
 
-export const configured=()=>!!(process.env.SUPABASE_URL&&process.env.SUPABASE_SERVICE_ROLE_KEY);
+export const supabaseKey=()=>process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY||'';
+export const configured=()=>!!(process.env.SUPABASE_URL&&supabaseKey());
 export function need(value,name){if(!value)throw new HttpError(`${name} 설정이 필요합니다.`,503);return value}
 
 export async function db(table,query='',method='GET',body){
   need(configured(),'Supabase');
+  const key=supabaseKey();
+  const headers={
+    apikey:key,
+    'Content-Type':'application/json',
+    Prefer:'return=representation'
+  };
+  // Legacy service_role keys are JWTs and can be sent as Bearer.
+  // New sb_secret_* keys must be sent only via apikey.
+  if(key.startsWith('eyJ'))headers.Authorization=`Bearer ${key}`;
   const r=await fetch(`${process.env.SUPABASE_URL}/rest/v1/${table}?${query}`,{
     method,
-    headers:{
-      apikey:process.env.SUPABASE_SERVICE_ROLE_KEY,
-      Authorization:`Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
-      'Content-Type':'application/json',
-      Prefer:'return=representation'
-    },
+    headers,
     body:body?JSON.stringify(body):undefined,
     cache:'no-store'
   });
