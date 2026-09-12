@@ -257,14 +257,18 @@ async function handle(req,ctx){
 
   if(route==='instagram/connect'){
     await row('clients',b.client_id);
+    const appId=need(process.env.META_APP_ID,'Instagram App ID');
+    if(!/^\d+$/.test(appId))throw new HttpError('META_APP_ID에는 Meta 앱 이름이나 Instagram 사용자명이 아니라 숫자로 된 Instagram App ID를 넣어 주세요.',503);
     const nonce=randomBytes(24).toString('hex');
     const state=encrypt(JSON.stringify({nonce,client:b.client_id,expires:Date.now()+600000}));
     const params=new URLSearchParams({
-      client_id:need(process.env.META_APP_ID,'Meta 앱'),
+      client_id:appId,
       redirect_uri:need(process.env.APP_URL,'앱 주소')+'/api/instagram/callback',
       response_type:'code',
       scope:'instagram_business_basic,instagram_business_manage_comments,instagram_business_manage_messages,instagram_business_content_publish',
-      state:nonce
+      state:nonce,
+      enable_fb_login:'0',
+      force_reauth:'true'
     });
     const r=json({url:'https://www.instagram.com/oauth/authorize?'+params});
     r.cookies.set('moa_oauth',state,{httpOnly:true,secure:true,sameSite:'lax',maxAge:600,path:'/'});
