@@ -246,3 +246,123 @@ main{padding:32px 34px 42px}
   font-weight:400;
   margin-left:6px;
 }
+
+
+/* Login gate */
+.login-shell{
+  min-height:100vh;
+  display:grid;
+  place-items:center;
+  padding:24px;
+  background:
+    radial-gradient(circle at top left,#eaf5ee 0,transparent 34%),
+    linear-gradient(180deg,#f8fbf9,#f3f7f4);
+}
+.login-card{
+  width:min(420px,100%);
+  background:#fff;
+  border:1px solid var(--border);
+  border-radius:22px;
+  box-shadow:0 24px 80px rgba(42,70,52,.10);
+  padding:34px;
+}
+.login-brand{
+  display:flex;
+  align-items:center;
+  gap:11px;
+  margin-bottom:32px;
+}
+.login-brand .brand-mark{margin:0}
+.login-brand>strong{
+  font-size:22px;
+  font-weight:800;
+  letter-spacing:-1px;
+}
+.login-icon{
+  width:44px;
+  height:44px;
+  border-radius:13px;
+  display:grid;
+  place-items:center;
+  background:#edf6f0;
+  color:var(--purple);
+  margin-bottom:18px;
+}
+.login-card h1{
+  font-size:26px;
+  letter-spacing:-1px;
+}
+.login-sub{
+  color:var(--muted);
+  margin-top:8px;
+  line-height:1.7;
+}
+.login-form{
+  display:grid;
+  gap:16px;
+  margin-top:28px;
+}
+.login-form label{
+  display:grid;
+  gap:8px;
+  font-size:13px;
+  font-weight:600;
+  color:#4b5b51;
+}
+.login-form input{
+  width:100%;
+  min-height:46px;
+  border:1px solid #dfe7e1;
+  border-radius:11px;
+  background:#fff;
+  padding:10px 12px;
+  outline:none;
+}
+.login-form input:focus{
+  border-color:#79ab8a;
+  box-shadow:0 0 0 3px #e2f0e7;
+}
+.login-form .primary{
+  width:100%;
+  min-height:46px;
+  margin-top:4px;
+}
+.login-error{
+  color:#b65f55;
+  background:#fff2f0;
+  border:1px solid #f0d6d2;
+  border-radius:10px;
+  padding:10px 12px;
+  font-size:12px;
+  line-height:1.6;
+}
+.login-env{
+  display:grid;
+  gap:8px;
+  margin-top:22px;
+}
+.login-env code{
+  display:block;
+  border:1px solid var(--border);
+  background:#f7faf8;
+  border-radius:9px;
+  padding:10px 12px;
+  color:#4f6858;
+  font-size:12px;
+}
+.login-checking{
+  min-height:160px;
+  display:grid;
+  place-items:center;
+  align-content:center;
+  gap:12px;
+  color:var(--muted);
+}
+.login-checking svg{
+  animation:moa-spin 1s linear infinite;
+  color:var(--purple);
+}
+@keyframes moa-spin{to{transform:rotate(360deg)}}
+@media(max-width:520px){
+  .login-card{padding:28px 22px;border-radius:18px}
+}
