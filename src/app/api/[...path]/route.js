@@ -1,5 +1,5 @@
 import {NextResponse} from 'next/server';
-import {randomBytes} from 'node:crypto';
+import {randomBytes,createHmac,timingSafeEqual} from 'node:crypto';
 import {configured,db,row,integration,instagramAccount,instagramGraph,channelTalkRequest,HttpError,need,textValue} from '../../../lib/server';
 import {encrypt,decrypt,verifySignature,canApprove,canSend} from '../../../lib/security.mjs';
 
@@ -8,6 +8,21 @@ export const maxDuration=60;
 
 const json=(data,status=200)=>NextResponse.json(data,{status,headers:{'Cache-Control':'no-store'}});
 const audit=(action,id)=>db('audit_logs','','POST',{action,target_id:String(id||'')});
+
+const AUTH_COOKIE='moa_session';
+const authConfigured=()=>!!(process.env.MOA_LOGIN_ID&&process.env.MOA_LOGIN_PASSWORD&&process.env.MOA_SESSION_SECRET);
+const safeEqual=(a,b)=>{
+  const aa=Buffer.from(String(a||'')),bb=Buffer.from(String(b||''));
+  return aa.length===bb.length&&timingSafeEqual(aa,bb);
+};
+const expectedSession=()=>createHmac('sha256',process.env.MOA_SESSION_SECRET)
+  .update(process.env.MOA_LOGIN_ID+'\n'+process.env.MOA_LOGIN_PASSWORD)
+  .digest('hex');
+const authenticated=req=>authConfigured()&&safeEqual(req.cookies.get(AUTH_COOKIE)?.value,expectedSession());
+function requireLogin(req){
+  if(!authConfigured())throw new HttpError('MOA 로그인 환경변수 설정이 필요합니다.',503);
+  if(!authenticated(req))throw new HttpError('로그인이 필요합니다.',401);
+}
 
 function collectorAuth(req){
   const secret=need(process.env.COLLECTOR_SHARED_SECRET,'수집기 공유 키');
@@ -42,6 +57,40 @@ async function handle(req,ctx){
   const {path}=await ctx.params;
   const route=path.join('/');
   const url=new URL(req.url);
+
+  if(route==='auth/status'&&req.method==='GET'){
+    return json({configured:authConfigured(),authenticated:authenticated(req)});
+  }
+
+  if(route==='auth/login'&&req.method==='POST'){
+    if(!authConfigured())throw new HttpError('Vercel에 MOA_LOGIN_ID, MOA_LOGIN_PASSWORD, MOA_SESSION_SECRET을 설정해 주세요.',503);
+    const body=await req.json().catch(()=>({}));
+    const validId=safeEqual(body.id,process.env.MOA_LOGIN_ID);
+    const validPassword=safeEqual(body.password,process.env.MOA_LOGIN_PASSWORD);
+    if(!validId||!validPassword)throw new HttpError('아이디 또는 비밀번호가 올바르지 않습니다.',401);
+    const res=json({ok:true});
+    res.cookies.set(AUTH_COOKIE,expectedSession(),{
+      httpOnly:true,
+      secure:process.env.NODE_ENV==='production',
+      sameSite:'lax',
+      path:'/',
+      maxAge:60*60*24*7
+    });
+    return res;
+  }
+
+  if(route==='auth/logout'&&req.method==='POST'){
+    const res=json({ok:true});
+    res.cookies.delete(AUTH_COOKIE);
+    return res;
+  }
+
+  const publicRoute=
+    route==='meta/webhook'||
+    route==='channel-talk/webhook'||
+    route==='instagram/callback'||
+    route.startsWith('collector/naver/');
+  if(!publicRoute)requireLogin(req);
 
   if(route==='config'&&req.method==='GET'){
     return json({
