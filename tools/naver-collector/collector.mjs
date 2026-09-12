@@ -42,75 +42,66 @@ async function ensureLogin(){
   if(!(await isLoggedIn()))throw new Error('로그인 상태를 확인하지 못했습니다. Chromium에서 로그인된 상태인지 확인해 주세요.');
 }
 
-async function findNewsPanel(){
-  // 네이버 블로그 홈 오른쪽의 "내 소식" 탭이 들어 있는 작은 패널을 찾는다.
-  const tab=page.getByText('내 소식',{exact:true}).first();
-  if(!(await tab.count()))return null;
-
-  return tab.evaluateHandle((node)=>{
-    let el=node;
-    for(let i=0;i<7&&el;i++,el=el.parentElement){
-      const text=(el.innerText||'').replace(/\s+/g,' ').trim();
-      const clickable=el.querySelectorAll('a,button,[role="button"]').length;
-      if(text.includes('내 소식')&&text.length<2500&&clickable>=2)return el;
-    }
-    return node.parentElement;
-  });
-}
-
 async function collectNewsItems(){
-  const panelHandle=await findNewsPanel();
-  if(!panelHandle){
-    console.log('오른쪽 "내 소식" 영역을 찾지 못했습니다.');
-    return [];
-  }
+  // 네이버 블로그 홈 오른쪽 "내 소식"의 실제 DOM만 읽습니다.
+  // .list_news > .item 내부의 댓글/답글 알림만 수집합니다.
+  await page.locator('.list_news').first().waitFor({state:'visible',timeout:10000}).catch(()=>{});
 
-  const raw=await panelHandle.evaluate((panel)=>{
-    const candidates=[...panel.querySelectorAll('a, li, [role="listitem"], button')];
-    return candidates.map((el,index)=>({
-      index,
-      text:(el.innerText||el.textContent||'').replace(/\s+/g,' ').trim(),
-      href:el.tagName==='A'?el.href:(el.querySelector('a')?.href||'')
-    })).filter(x=>x.text);
+  const items=await page.locator('.list_news .item').evaluateAll((nodes)=>{
+    return nodes.map((el)=>{
+      const type=(el.querySelector('.blind')?.textContent||'').trim();
+      const author=(el.querySelector('a.name em.name')?.textContent||'').trim();
+      const link=el.querySelector('a.post_link');
+      const href=link?.href||'';
+      const title=(el.querySelector('.title_my_post')?.textContent||'').trim();
+      const tail=(link?.querySelector('span[ng-bind-html]')?.textContent||'').trim();
+      const datetime=(el.querySelector('.text_datetime')?.textContent||'').trim();
+
+      let commentNo='';
+      try{
+        const u=new URL(href);
+        commentNo=u.searchParams.get('commentNoPosition')||u.searchParams.get('focusingCommentNo')||'';
+      }catch{}
+
+      return {type,author,href,title,tail,datetime,commentNo};
+    });
   });
 
-  const ignore=/^(내 소식|내 활동|이웃 목록|로그아웃|내 블로그|글쓰기)$/;
-  const looksLikeNews=/(님이|댓글|답글|공감|좋아요|반응|이웃|언급|스크랩)/;
+  const result=[];
   const seen=new Set();
-  const items=[];
 
-  for(const x of raw){
-    const text=clean(x.text);
-    if(!text||ignore.test(text)||text.length<4||text.length>700)continue;
-    if(!looksLikeNews.test(text))continue;
+  for(const x of items){
+    // 공감/이웃 등은 제외하고 새 댓글/새 답글만 MOA로 보냅니다.
+    if(!['새 댓글','새 답글'].includes(clean(x.type)))continue;
+    if(!x.href)continue;
 
-    const key=`${x.href||''}|${text}`;
-    if(seen.has(key))continue;
-    seen.add(key);
+    const stable=x.commentNo
+      ? `naver-news:${process.env.NAVER_BLOG_ID}:${x.commentNo}`
+      : `naver-news:${hash([x.type,x.author,x.href,x.title,x.tail,x.datetime].join('|'))}`;
 
-    const author=(text.match(/^(.{1,80}?)님이\s/)||[])[1]||'네이버 사용자';
-    const kind=/댓글|답글/.test(text)?'comment':'message';
+    if(seen.has(stable))continue;
+    seen.add(stable);
 
-    items.push({
-      external_id:hash(key),
-      kind,
-      author,
-      body:text,
-      context:'네이버 블로그 · 내 소식',
-      context_url:x.href||null,
+    const eventText=clean(x.tail)||`${clean(x.type)} 알림`;
+    result.push({
+      external_id:stable,
+      kind:'comment',
+      author:clean(x.author)||'네이버 사용자',
+      body:eventText,
+      context:clean(x.title)||'네이버 블로그',
+      context_url:x.href,
       created_at:new Date().toISOString(),
       metadata:{
-        source:'naver-blog-home-news',
-        original_text:text
+        source:'naver-blog-home-list-news',
+        news_type:clean(x.type),
+        display_datetime:clean(x.datetime),
+        post_title:clean(x.title),
+        comment_no:x.commentNo||null
       }
     });
   }
 
-  // 같은 알림이 중첩 DOM 때문에 여러 번 잡힐 때 짧고 구체적인 항목을 우선한다.
-  return items
-    .sort((a,b)=>a.body.length-b.body.length)
-    .filter((item,index,list)=>!list.slice(0,index).some(x=>x.body===item.body||x.body.includes(item.body)))
-    .slice(0,30);
+  return result.slice(0,50);
 }
 
 async function push(items){
@@ -138,15 +129,17 @@ async function cycle(){
 
   const items=await collectNewsItems();
   if(items.length){
-    console.log('수집된 내 소식:');
-    for(const item of items.slice(0,5))console.log(' -',item.body);
+    console.log('수집된 댓글/답글 알림:');
+    for(const item of items.slice(0,5)){
+      console.log(' -',item.metadata?.news_type,item.author,'/',item.context,'/',item.body);
+    }
   }else{
-    console.log('현재 화면에서 새로 읽은 "내 소식" 항목이 없습니다.');
+    console.log('현재 .list_news에서 댓글/답글 알림을 찾지 못했습니다.');
   }
   await push(items);
 }
 
-console.log('MOA 네이버 블로그 홈 "내 소식" 수집기 시작');
+console.log('MOA 네이버 블로그 홈 ".list_news" 댓글/답글 수집기 시작');
 console.log('대상:',process.env.NAVER_MANAGEMENT_URL);
 await cycle().catch(e=>console.error('수집 오류:',e.message));
 setInterval(()=>cycle().catch(e=>console.error('수집 오류:',e.message)),pollMs);
