@@ -278,9 +278,12 @@ async function handle(req,ctx){
   if(route==='posts'){
     await row('clients',b.client_id);
     if(!['naver','instagram','schedule_plan','schedule_general','schedule_other'].includes(b.platform))throw new HttpError('카테고리를 선택해 주세요.');
+    const scheduleOnly=b.platform.startsWith('schedule_');
     if(b.scheduled_at&&isNaN(Date.parse(b.scheduled_at)))throw new HttpError('일정을 확인해 주세요.');
+    if(scheduleOnly&&!b.scheduled_at)throw new HttpError('일정 카테고리는 날짜를 지정해 주세요.');
     if(b.image_url){const image=new URL(b.image_url);if(image.protocol!=='https:')throw new HttpError('공개 HTTPS 이미지 주소를 입력해 주세요.')}
-    const body={client_id:b.client_id,title:textValue(b.title,200),body:textValue(b.body,10000),platform:b.platform,image_url:b.image_url||null,scheduled_at:b.scheduled_at||null,status:b.scheduled_at?'planned':'draft',updated_at:new Date().toISOString()};
+    const postBody=scheduleOnly?String(b.body||'').slice(0,10000):textValue(b.body,10000);
+    const body={client_id:b.client_id,title:textValue(b.title,200),body:postBody,platform:b.platform,image_url:scheduleOnly?null:(b.image_url||null),scheduled_at:b.scheduled_at||null,status:b.scheduled_at?'planned':'draft',updated_at:new Date().toISOString()};
     if(b.id){const p=await row('posts',b.id);if(!['draft','planned'].includes(p.status))throw new HttpError('이미 처리된 게시물은 수정할 수 없습니다.',409);await db('posts',`id=eq.${p.id}`,'PATCH',body)}
     else await db('posts','','POST',body);
     return json({ok:true});
