@@ -51,6 +51,8 @@ export default function App(){
   const [search,setSearch]=useState('');
   const [mobile,setMobile]=useState(false);
   const [sidebarCollapsed,setSidebarCollapsed]=useState(false);
+  const [authState,setAuthState]=useState('checking');
+  const [loginError,setLoginError]=useState('');
   const [platformFilter,setPlatformFilter]=useState('all');
   const [monthOffset,setMonthOffset]=useState(0);
 
@@ -72,7 +74,28 @@ export default function App(){
     if(!selected&&d.comments?.[0]?.id)setSelected(d.comments[0].id);
   }
 
-  useEffect(()=>{refresh().catch(e=>setToast(e.message))},[]);
+  useEffect(()=>{
+    (async()=>{
+      try{
+        const r=await fetch('/api/auth/status',{cache:'no-store'});
+        const s=await r.json().catch(()=>({}));
+        if(!s.configured){
+          setAuthState('setup');
+          setLoginError('Vercel에 로그인 환경변수를 먼저 설정해 주세요.');
+          return;
+        }
+        if(!s.authenticated){
+          setAuthState('required');
+          return;
+        }
+        setAuthState('authenticated');
+        await refresh();
+      }catch(e){
+        setAuthState('required');
+        setLoginError(e.message||'로그인 상태를 확인하지 못했습니다.');
+      }
+    })();
+  },[]);
   useEffect(()=>{if(toast){const id=setTimeout(()=>setToast(''),4500);return()=>clearTimeout(id)}},[toast]);
 
   const filteredClients=useMemo(()=>data.clients.filter(c=>client==='all'||c.id===client),[data.clients,client]);
@@ -87,6 +110,34 @@ export default function App(){
 
   function go(v){setView(v);setMobile(false);setSearch('')}
   async function run(fn){if(busy)return;setBusy(true);try{await fn()}catch(e){setToast(e.message)}finally{setBusy(false)}}
+
+  async function login(e){
+    e.preventDefault();
+    if(busy)return;
+    setBusy(true);
+    setLoginError('');
+    try{
+      const form=new FormData(e.currentTarget);
+      await api('auth/login',{id:form.get('id'),password:form.get('password')});
+      setAuthState('authenticated');
+      await refresh();
+    }catch(err){
+      setLoginError(err.message||'로그인에 실패했습니다.');
+    }finally{
+      setBusy(false);
+    }
+  }
+
+  async function logout(){
+    if(busy)return;
+    setBusy(true);
+    try{await api('auth/logout',{})}catch{}
+    setData(EMPTY);
+    setConfig(null);
+    setSelected('');
+    setAuthState('required');
+    setBusy(false);
+  }
 
   async function saveClient(e){
     e.preventDefault();const b=Object.fromEntries(new FormData(e.currentTarget));
@@ -132,6 +183,32 @@ export default function App(){
 
   const account=(clientId,platform)=>data.accounts.find(a=>a.client_id===clientId&&a.platform===platform);
 
+  if(authState!=='authenticated'){
+    return <div className="login-shell">
+      <div className="login-card">
+        <div className="login-brand"><span className="brand-mark">m<span>•</span></span><strong>모아</strong></div>
+        {authState==='checking'?<div className="login-checking"><RefreshCw size={24}/><p>로그인 상태 확인 중</p></div>:
+        authState==='setup'?<>
+          <div className="login-icon"><LockKeyhole size={24}/></div>
+          <h1>로그인 설정 필요</h1>
+          <p className="login-sub">Vercel Environment Variables에 아래 3개 값을 추가한 뒤 다시 배포하세요.</p>
+          <div className="login-env"><code>MOA_LOGIN_ID</code><code>MOA_LOGIN_PASSWORD</code><code>MOA_SESSION_SECRET</code></div>
+          {loginError&&<p className="login-error">{loginError}</p>}
+        </>:<>
+          <div className="login-icon"><LockKeyhole size={24}/></div>
+          <h1>MOA 로그인</h1>
+          <p className="login-sub">워크스페이스에 접속하려면 로그인하세요.</p>
+          <form onSubmit={login} className="login-form">
+            <label>아이디<input name="id" autoComplete="username" required autoFocus/></label>
+            <label>비밀번호<input name="password" type="password" autoComplete="current-password" required/></label>
+            {loginError&&<p className="login-error">{loginError}</p>}
+            <button className="primary" disabled={busy}>{busy?'확인 중...':'로그인'}</button>
+          </form>
+        </>}
+      </div>
+    </div>
+  }
+
   return <div className="shell">
     <aside className={'sidebar '+(mobile?'open ':'')+(sidebarCollapsed?'collapsed':'')}>
       <div className="sidebar-head">
@@ -146,7 +223,7 @@ export default function App(){
     <div className={'main '+(sidebarCollapsed?'expanded':'')}>
       <header className="topbar">
         <div className="row"><button className="icon-btn mobile-menu" onClick={()=>setMobile(!mobile)} aria-label="메뉴"><Menu size={21}/></button><span className="breadcrumb"><b>{names[view]}</b></span></div>
-        <div className="top-actions"><button className="icon-btn" onClick={()=>run(refresh)} aria-label="새로고침"><RefreshCw size={18}/></button><button className="icon-btn" onClick={()=>setModal({type:'notifications'})} aria-label="알림"><Bell size={19}/>{data.notifications.length>0&&<i/>}</button></div>
+        <div className="top-actions"><button className="icon-btn" onClick={()=>run(refresh)} aria-label="새로고침"><RefreshCw size={18}/></button><button className="icon-btn" onClick={()=>setModal({type:'notifications'})} aria-label="알림"><Bell size={19}/>{data.notifications.length>0&&<i/>}</button><button className="icon-btn" onClick={logout} aria-label="로그아웃" title="로그아웃"><LockKeyhole size={17}/></button></div>
       </header>
 
       <main>
