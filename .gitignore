@@ -1,0 +1,31 @@
+# Secrets / local environment
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Next.js / Vercel
+.next/
+**/.next/
+.vercel/
+
+# Local standalone Node runtime
+tools/node/
+
+# Naver collector browser profile / login session
+tools/naver-collector/profile/
+
+# Playwright local artifacts
+playwright-report/
+test-results/
+
+# Logs / OS
+*.log
+.DS_Store
+Thumbs.db
