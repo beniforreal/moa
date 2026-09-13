@@ -204,7 +204,7 @@ export default function App(){
   if(authState!=='authenticated'){
     return <div className="login-shell">
       <div className="login-card">
-        <div className="login-brand"><span className="brand-mark">m<span>•</span></span><strong>모아</strong></div>
+        <div className="login-brand"><img className="brand-logo" src="/icon.png" alt="MOA"/><strong>모아</strong></div>
         {authState==='checking'?<div className="login-checking"><RefreshCw size={24}/><p>로그인 상태 확인 중</p></div>:
         authState==='setup'?<>
           <div className="login-icon"><LockKeyhole size={24}/></div>
@@ -230,7 +230,7 @@ export default function App(){
   return <div className="shell">
     <aside className={'sidebar '+(mobile?'open ':'')+(sidebarCollapsed?'collapsed':'')}>
       <div className="sidebar-head">
-        <a className="brand" href="/" aria-label="모아 홈"><span className="brand-mark">m<span>•</span></span><strong>모아<span>moa</span></strong></a>
+        <a className="brand" href="/" aria-label="모아 홈"><img className="brand-logo" src="/icon.png" alt="MOA"/><strong>모아<span>moa</span></strong></a>
         <button className="sidebar-toggle" onClick={()=>setSidebarCollapsed(v=>!v)} aria-label={sidebarCollapsed?'사이드바 펼치기':'사이드바 접기'}>
           {sidebarCollapsed?<ChevronRight size={17}/>:<ChevronLeft size={17}/>}
         </button>
