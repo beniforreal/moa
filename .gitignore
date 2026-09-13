@@ -29,3 +29,9 @@ test-results/
 *.log
 .DS_Store
 Thumbs.db
+
+# Android / Firebase local build artifacts
+android-app/.gradle/
+android-app/**/build/
+android-app/app/google-services.json
+*.apk
