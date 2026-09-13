@@ -2,6 +2,7 @@ import {NextResponse} from 'next/server';
 import {randomBytes,createHmac,timingSafeEqual} from 'node:crypto';
 import {configured,db,row,integration,instagramAccount,instagramGraph,channelTalkRequest,HttpError,need,textValue} from '../../../lib/server';
 import {encrypt,decrypt,verifySignature,canApprove,canSend} from '../../../lib/security.mjs';
+import {pushConfigured,sendPush} from '../../../lib/push.mjs';
 
 export const runtime='nodejs';
 export const maxDuration=60;
@@ -50,7 +51,19 @@ async function upsertInbox(item){
     return existing[0].id;
   }
   const created=await db('inbox_items','','POST',item);
-  return created[0]?.id;
+  const id=created[0]?.id;
+  try{
+    const devices=await db('push_devices','enabled=eq.true&select=token');
+    const platformName=item.platform==='instagram'?'Instagram':item.platform==='naver'?'네이버 블로그':item.platform==='channel_talk'?'카카오 상담톡':'MOA';
+    await sendPush(devices.map(x=>x.token),{
+      title:platformName+' 새 '+(item.kind==='comment'?'댓글':'문의'),
+      body:(item.author?item.author+': ':'')+String(item.body||'').slice(0,160),
+      data:{platform:item.platform,inbox_item_id:id||'',view:'inbox'}
+    });
+  }catch(e){
+    console.error('Push notification failed',e);
+  }
+  return id;
 }
 
 async function handle(req,ctx){
@@ -99,8 +112,26 @@ async function handle(req,ctx){
       instagram:!!(process.env.META_APP_ID&&process.env.META_APP_SECRET&&process.env.META_GRAPH_VERSION&&process.env.CREDENTIALS_ENCRYPTION_KEY&&process.env.APP_URL),
       ai:!!(process.env.OPENAI_API_KEY&&process.env.AI_MODEL),
       collector:!!process.env.COLLECTOR_SHARED_SECRET,
-      channelTalkWebhook:!!process.env.CHANNEL_TALK_WEBHOOK_SECRET
+      channelTalkWebhook:!!process.env.CHANNEL_TALK_WEBHOOK_SECRET,
+      push:pushConfigured()
     });
+  }
+
+  if(route==='push/register'&&req.method==='POST'){
+    const b=await req.json().catch(()=>({}));
+    const token=textValue(b.token,4096);
+    const existing=await db('push_devices',`token=eq.${encodeURIComponent(token)}`);
+    const patch={token,platform:'android',enabled:true,last_seen_at:new Date().toISOString()};
+    if(existing[0])await db('push_devices',`id=eq.${existing[0].id}`,'PATCH',patch);
+    else await db('push_devices','','POST',patch);
+    return json({ok:true,push:pushConfigured()});
+  }
+
+  if(route==='push/unregister'&&req.method==='POST'){
+    const b=await req.json().catch(()=>({}));
+    const token=textValue(b.token,4096);
+    await db('push_devices',`token=eq.${encodeURIComponent(token)}`,'PATCH',{enabled:false,last_seen_at:new Date().toISOString()});
+    return json({ok:true});
   }
 
   if(route==='data'&&req.method==='GET'){
