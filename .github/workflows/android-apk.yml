@@ -53,8 +53,12 @@ jobs:
           MOA_APP_URL: ${{ vars.MOA_APP_URL }}
         run: gradle :app:assembleRelease -PMOA_APP_URL="$MOA_APP_URL" --no-daemon
 
-      - name: Rename APK
-        run: cp android-app/app/build/outputs/apk/release/app-release.apk MOA.apk
+      - name: Locate and rename APK
+        run: |
+          APK_PATH="$(find android-app/app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' | head -n 1)"
+          test -n "$APK_PATH" || (echo "No APK found in release output" && find android-app/app/build/outputs -maxdepth 5 -type f -print && exit 1)
+          echo "Using APK: $APK_PATH"
+          cp "$APK_PATH" MOA.apk
 
       - name: Upload APK to GitHub Actions
         uses: actions/upload-artifact@v4
