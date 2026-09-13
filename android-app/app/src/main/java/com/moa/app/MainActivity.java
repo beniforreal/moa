@@ -36,13 +36,19 @@ public class MainActivity extends Activity {
         settings.setDatabaseEnabled(true);
         settings.setAllowFileAccess(false);
         settings.setAllowContentAccess(false);
+        settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
 
-        CookieManager.getInstance().setAcceptCookie(true);
-        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
+        // MOA is a live dashboard. Never keep a stale Next.js page/API response in the APK.
+        webView.clearCache(true);
+
+        CookieManager cookieManager = CookieManager.getInstance();
+        cookieManager.setAcceptCookie(true);
+        cookieManager.setAcceptThirdPartyCookies(webView, true);
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public void onPageFinished(WebView view, String url) {
+                CookieManager.getInstance().flush();
                 dispatchPushToken();
             }
         });
@@ -57,7 +63,10 @@ public class MainActivity extends Activity {
         });
 
         requestPushPermission();
-        webView.loadUrl(BuildConfig.MOA_APP_URL);
+
+        String separator = BuildConfig.MOA_APP_URL.contains("?") ? "&" : "?";
+        String freshUrl = BuildConfig.MOA_APP_URL + separator + "moa_android=1&app_version=2";
+        webView.loadUrl(freshUrl);
     }
 
     private void createNotificationChannel() {
