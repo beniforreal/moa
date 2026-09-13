@@ -98,6 +98,24 @@ export default function App(){
   },[]);
   useEffect(()=>{if(toast){const id=setTimeout(()=>setToast(''),4500);return()=>clearTimeout(id)}},[toast]);
 
+  useEffect(()=>{
+    if(authState!=='authenticated'||typeof window==='undefined')return;
+    let lastToken='';
+    const register=async token=>{
+      if(!token||token===lastToken)return;
+      lastToken=token;
+      try{await api('push/register',{token})}catch(e){console.warn('Push registration failed',e)}
+    };
+    const onToken=e=>register(e?.detail?.token);
+    window.addEventListener('moa-push-token',onToken);
+    try{
+      window.MoaAndroid?.requestPushPermission?.();
+      const token=window.MoaAndroid?.getPushToken?.();
+      if(token)register(token);
+    }catch(e){console.warn('Android push bridge unavailable',e)}
+    return()=>window.removeEventListener('moa-push-token',onToken);
+  },[authState]);
+
   const filteredClients=useMemo(()=>data.clients.filter(c=>client==='all'||c.id===client),[data.clients,client]);
   const posts=useMemo(()=>data.posts.filter(p=>client==='all'||p.client_id===client),[data.posts,client]);
   const comments=useMemo(()=>data.comments.filter(c=>(client==='all'||c.client_id===client)&&(platformFilter==='all'||c.platform===platformFilter)&&c.status!=='confirmed'),[data.comments,client,platformFilter]);
