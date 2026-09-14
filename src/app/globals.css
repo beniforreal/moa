@@ -391,3 +391,28 @@ main{padding:32px 34px 42px}
   font-size:12px;
   color:var(--muted);
 }
+
+
+/* Inbox confirmation + dashboard shortcuts */
+.inbox-filter-row{display:flex;align-items:center;gap:10px}
+.inbox-filter-row .search{flex:1;min-width:0}
+.inbox-bulk{flex:0 0 auto;white-space:nowrap;min-height:38px;padding:8px 11px}
+.channel-shortcuts{margin-bottom:22px;overflow:hidden}
+.channel-shortcuts>.section-title{padding:20px 22px 14px}
+.shortcut-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;padding:0 22px 22px}
+.shortcut-client{min-width:0;border:1px solid var(--border);border-radius:12px;background:#fcfefd;padding:14px}
+.shortcut-client>b{display:block;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:10px}
+.shortcut-actions{display:flex;gap:7px;flex-wrap:wrap}
+.shortcut-actions a,.shortcut-actions button,.shortcut-actions span{display:inline-flex;align-items:center;gap:5px;min-height:30px;padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:#fff;color:#53635a;font-size:11px;white-space:nowrap}
+.shortcut-actions a:hover,.shortcut-actions button:hover{border-color:#cfe0d4;background:#f3f8f5;color:#3f7655}
+.shortcut-actions .disabled{opacity:.42;cursor:default}
+.naver-n{font-size:12px;color:#2d9b57}
+.dashboard-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.dashboard-grid>.panel{min-width:0;overflow:hidden}
+.dashboard-grid .simple-list>button{min-width:0}
+.dashboard-grid .simple-list>button>span{min-width:0;overflow:hidden}
+.dashboard-grid .simple-list>button>span>b,.dashboard-grid .simple-list>button>span>small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dashboard-grid .badge{flex:0 0 auto;white-space:nowrap;min-width:42px;max-width:58px;text-align:center;overflow:hidden;text-overflow:ellipsis;padding-left:7px;padding-right:7px}
+@media(max-width:1100px){.shortcut-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:900px){.dashboard-grid{grid-template-columns:1fr}.shortcut-grid{grid-template-columns:1fr}}
+@media(max-width:680px){.inbox-filter-row{align-items:stretch}.inbox-bulk{padding-left:9px;padding-right:9px;font-size:11px}.channel-shortcuts>.section-title{padding-left:18px;padding-right:18px}.shortcut-grid{padding-left:18px;padding-right:18px}}
