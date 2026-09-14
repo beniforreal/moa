@@ -240,10 +240,10 @@ async function handle(req,ctx){
         message:metaMessage||null
       });
       const accessHint=metaCode===100||/unsupported request|permission|access/i.test(metaMessage);
+      const upstream=[metaCode?`Meta #${metaCode}`:null,metaMessage||null].filter(Boolean).join(' · ');
       throw new HttpError(
-        accessHint
-          ? '장기 토큰 발급 실패: Meta가 이 Instagram 계정의 앱 접근을 허용하지 않았습니다. Instagram Tester 초대 수락 또는 앱의 Advanced Access/Access Verification 상태를 확인해 주세요.'
-          : '장기 토큰 발급 실패'+(metaMessage?': '+metaMessage:''),
+        '장기 토큰 발급 실패'+(upstream?' ('+upstream+')':'')+
+        (accessHint?' — 이 계정의 Instagram Tester 역할/초대 수락 또는 앱 접근 수준을 확인해 주세요.':''),
         502
       );
     }
