@@ -397,7 +397,7 @@ async function handle(req,ctx){
 
   if(route==='posts/publish'){
     const p=await row('posts',b.id);
-    if(!['draft','planned'].includes(p.status))throw new HttpError('이미 처리 중이거나 발행된 게시물입니다.',409);
+    if(!['draft','planned','failed'].includes(p.status))throw new HttpError('이미 처리 중이거나 발행된 게시물입니다.',409);
     if(p.platform.startsWith('schedule_'))throw new HttpError('일정 카테고리는 발행 대상이 아닙니다.',409);
     if(p.platform==='naver'){
       const pub=new URL(textValue(b.url,2000));
