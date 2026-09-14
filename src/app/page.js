@@ -1,5 +1,5 @@
 'use client';
-import {useEffect,useMemo,useState} from 'react';
+import {useEffect,useMemo,useRef,useState} from 'react';
 import {
   LayoutDashboard,PenLine,Inbox,Building2,Settings,Plus,ArrowRight,Search,Bell,Check,Send,
   Sparkles,Instagram,ExternalLink,LockKeyhole,X,Menu,RefreshCw,ShieldCheck,MessageCircle,
@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 
 const EMPTY={clients:[],posts:[],comments:[],accounts:[],notifications:[]};
-const labels={draft:'초안',planned:'일정 등록',published:'발행 완료',publishing:'발행 중',new:'확인 필요',approved:'승인 완료',sending:'전송 중',sent:'답변 완료',confirmed:'확인 완료',failed:'확인 필요'};
+const labels={draft:'초안',planned:'일정',published:'발행',publishing:'발행 중',new:'확인',approved:'승인',sending:'전송중',sent:'완료',confirmed:'확인됨',failed:'확인'};
 
 const nav=[
   ['dashboard','대시보드',LayoutDashboard],
@@ -55,6 +55,7 @@ export default function App(){
   const [loginError,setLoginError]=useState('');
   const [platformFilter,setPlatformFilter]=useState('all');
   const [monthOffset,setMonthOffset]=useState(0);
+  const knownInboxIds=useRef(new Set());
 
   async function api(path,body,options={}){
     const r=await fetch('/api/'+path,{
@@ -68,8 +69,21 @@ export default function App(){
     return d;
   }
 
-  async function refresh(){
+  async function refresh({notifyNew=false}={}){
     const [d,c]=await Promise.all([api('data'),api('config')]);
+    if(notifyNew){
+      const fresh=(d.comments||[]).filter(x=>!knownInboxIds.current.has(x.id)&&['new','failed'].includes(x.status));
+      if(fresh.length){
+        const newest=fresh[0];
+        const source=newest.platform==='instagram'?'Instagram':newest.platform==='naver'?'네이버 블로그':newest.platform==='channel_talk'?'카카오 상담톡':'MOA';
+        const message=`${source} 새 ${newest.kind==='comment'?'댓글':'문의'} · ${newest.author||'새 사용자'}`;
+        setToast(message);
+        if(typeof window!=='undefined'&&!window.MoaAndroid&&'Notification' in window&&Notification.permission==='granted'){
+          try{new Notification(message,{body:String(newest.body||'').slice(0,160),icon:'/icon.png'})}catch{}
+        }
+      }
+    }
+    knownInboxIds.current=new Set((d.comments||[]).map(x=>x.id));
     setData(d);setConfig(c);
     if(!selected&&d.comments?.[0]?.id)setSelected(d.comments[0].id);
   }
@@ -116,10 +130,21 @@ export default function App(){
     return()=>window.removeEventListener('moa-push-token',onToken);
   },[authState]);
 
+  useEffect(()=>{
+    if(authState!=='authenticated')return;
+    const tick=()=>refresh({notifyNew:true}).catch(()=>{});
+    const id=setInterval(tick,20000);
+    const onVisible=()=>{if(document.visibilityState==='visible')tick()};
+    document.addEventListener('visibilitychange',onVisible);
+    return()=>{clearInterval(id);document.removeEventListener('visibilitychange',onVisible)};
+  },[authState]);
+
   const filteredClients=useMemo(()=>data.clients.filter(c=>client==='all'||c.id===client),[data.clients,client]);
   const posts=useMemo(()=>data.posts.filter(p=>client==='all'||p.client_id===client),[data.posts,client]);
   const comments=useMemo(()=>data.comments.filter(c=>(client==='all'||c.client_id===client)&&(platformFilter==='all'||c.platform===platformFilter)&&c.status!=='confirmed'),[data.comments,client,platformFilter]);
   const pending=comments.filter(x=>!['sent','confirmed'].includes(x.status));
+  const visibleComments=useMemo(()=>comments.filter(c=>(c.body+c.author).toLowerCase().includes(search.toLowerCase())),[comments,search]);
+  const confirmableVisible=visibleComments.filter(x=>['new','failed'].includes(x.status));
   const calendar=useMemo(()=>{const now=new Date();const first=new Date(now.getFullYear(),now.getMonth()+monthOffset,1);const start=new Date(first);start.setDate(1-first.getDay());const days=Array.from({length:42},(_,i)=>{const d=new Date(start);d.setDate(start.getDate()+i);return d});return {first,days}},[monthOffset]);
   const item=data.comments.find(x=>x.id===selected);
   const cName=id=>data.clients.find(c=>c.id===id)?.name||'고객사';
@@ -193,14 +218,32 @@ export default function App(){
     });
   }
 
-  async function confirmNaver(){
-    if(!item||item.platform!=='naver')return;
+  async function confirmItem(target=item){
+    if(!target)return;
     await run(async()=>{
-      await api('inbox/confirm',{id:item.id});
+      await api('inbox/confirm',{id:target.id});
+      if(selected===target.id)setSelected('');
+      await refresh();
+      setToast('확인 처리했습니다.');
+    });
+  }
+
+  async function confirmVisible(){
+    if(!confirmableVisible.length)return;
+    if(!window.confirm(`현재 목록의 확인 필요 항목 ${confirmableVisible.length}건을 모두 확인 처리할까요?`))return;
+    await run(async()=>{
+      const result=await api('inbox/confirm-bulk',{ids:confirmableVisible.map(x=>x.id)});
       setSelected('');
       await refresh();
-      setToast('네이버 알림을 확인 처리했습니다. 같은 알림은 다시 표시하지 않습니다.');
+      setToast(`${result.count||0}건을 일괄 확인 처리했습니다.`);
     });
+  }
+
+  async function openNotifications(){
+    if(typeof window!=='undefined'&&!window.MoaAndroid&&'Notification' in window&&Notification.permission==='default'){
+      try{await Notification.requestPermission()}catch{}
+    }
+    setModal({type:'notifications'});
   }
 
   async function deleteClient(c){
@@ -256,7 +299,7 @@ export default function App(){
     <div className={'main '+(sidebarCollapsed?'expanded':'')}>
       <header className="topbar">
         <div className="row"><button className="icon-btn mobile-menu" onClick={()=>setMobile(!mobile)} aria-label="메뉴"><Menu size={21}/></button><span className="breadcrumb"><b>{names[view]}</b></span></div>
-        <div className="top-actions"><button className="icon-btn" onClick={()=>run(refresh)} aria-label="새로고침"><RefreshCw size={18}/></button><button className="icon-btn" onClick={()=>setModal({type:'notifications'})} aria-label="알림"><Bell size={19}/>{data.notifications.length>0&&<i/>}</button><button className="icon-btn" onClick={logout} aria-label="로그아웃" title="로그아웃"><LockKeyhole size={17}/></button></div>
+        <div className="top-actions"><button className="icon-btn" onClick={()=>run(refresh)} aria-label="새로고침"><RefreshCw size={18}/></button><button className="icon-btn" onClick={openNotifications} aria-label="알림"><Bell size={19}/>{pending.length>0&&<i/>}</button><button className="icon-btn" onClick={logout} aria-label="로그아웃" title="로그아웃"><LockKeyhole size={17}/></button></div>
       </header>
 
       <main>
@@ -276,6 +319,19 @@ export default function App(){
             <div className="stat stat-2"><div className="row"><span>답변 필요</span><MessageCircle size={20}/></div><strong>{pending.length}<small> 건</small></strong><p>수집된 미답변 대화</p></div>
             <div className="stat"><div className="row"><span>발행 완료</span><Check size={20}/></div><strong>{posts.filter(p=>p.status==='published').length}<small> 건</small></strong><p>실제 발행 기록</p></div>
           </div>
+          <section className="panel channel-shortcuts">
+            <div className="section-title"><h2>고객사 채널 바로가기</h2><button className="text-link" onClick={()=>go('settings')}>채널 관리 <ArrowRight size={15}/></button></div>
+            {filteredClients.length?<div className="shortcut-grid">{filteredClients.map(c=>{
+              const ig=account(c.id,'instagram');
+              const nv=account(c.id,'naver');
+              const kt=account(c.id,'channel_talk');
+              return <div className="shortcut-client" key={c.id}><b>{c.name}</b><div className="shortcut-actions">
+                {ig?.username?<a href={'https://www.instagram.com/'+ig.username.replace(/^@/,'')} target="_blank" rel="noreferrer"><Instagram size={15}/>Instagram</a>:<span className="disabled"><Instagram size={15}/>Instagram</span>}
+                {nv?.username?<a href={'https://blog.naver.com/'+nv.username} target="_blank" rel="noreferrer"><b className="naver-n">N</b>네이버</a>:<span className="disabled"><b className="naver-n">N</b>네이버</span>}
+                <button className={kt?.configured||kt?.status==='connected'?'':'disabled'} onClick={()=>{setClient(c.id);setPlatformFilter('channel_talk');setSelected('');go('inbox')}}><MessageCircle size={15}/>카카오</button>
+              </div></div>
+            })}</div>:<Empty text="고객사를 등록하면 채널 바로가기가 표시됩니다."/>}
+          </section>
           <div className="dashboard-grid">
             <section className="panel"><div className="section-title"><h2>최근 콘텐츠</h2><button className="text-link" onClick={()=>go('posts')}>전체 보기 <ArrowRight size={15}/></button></div>{posts.length?<div className="simple-list">{posts.slice(0,5).map(p=><button key={p.id} onClick={()=>setModal({type:'detail',item:p})}><span><Channel platform={p.platform} small/><b>{p.title}</b></span><Badge status={p.status}/></button>)}</div>:<Empty text="실제 콘텐츠가 아직 없습니다."/>}</section>
             <section className="panel"><div className="section-title"><h2>답변을 기다리는 대화 <span className="number">{pending.length}</span></h2><button className="text-link" onClick={()=>go('inbox')}>댓글함 <ArrowRight size={15}/></button></div>{pending.length?<div className="simple-list">{pending.slice(0,5).map(m=><button key={m.id} onClick={()=>{setSelected(m.id);go('inbox')}}><span><Channel platform={m.platform} small/><b>{m.author}</b><small>{m.body}</small></span><Badge status={m.status}/></button>)}</div>:<Empty text="수집된 미답변 대화가 없습니다."/>}</section>
@@ -299,16 +355,16 @@ export default function App(){
 
         {view==='inbox'&&<section className="inbox-layout panel">
           <div className="conversation-list">
-            <div className="inbox-filters"><div className="search"><Search size={16}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="대화 검색"/></div><div className="tabs channel-tabs">{[['all','전체'],['instagram','Instagram'],['naver','네이버'],['channel_talk','카카오']].map(([id,label])=><button key={id} className={platformFilter===id?'selected':''} onClick={()=>{setPlatformFilter(id);setSelected('')}}>{label}</button>)}</div></div>
-            {comments.filter(c=>(c.body+c.author).toLowerCase().includes(search.toLowerCase())).map(c=><button className={'conversation '+(selected===c.id?'selected':'')} key={c.id} onClick={()=>setSelected(c.id)}><div className="row"><span className="row"><Channel platform={c.platform} small/><b>{c.author}</b></span><Badge status={c.status}/></div><p>{c.body}</p><small>{cName(c.client_id)} · {fmt(c.created_at)}</small></button>)}
+            <div className="inbox-filters"><div className="inbox-filter-row"><div className="search"><Search size={16}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="대화 검색"/></div><button className="secondary inbox-bulk" disabled={busy||!confirmableVisible.length} onClick={confirmVisible}><Check size={15}/>일괄 확인 {confirmableVisible.length||''}</button></div><div className="tabs channel-tabs">{[['all','전체'],['instagram','Instagram'],['naver','네이버'],['channel_talk','카카오']].map(([id,label])=><button key={id} className={platformFilter===id?'selected':''} onClick={()=>{setPlatformFilter(id);setSelected('')}}>{label}</button>)}</div></div>
+            {visibleComments.map(c=><button className={'conversation '+(selected===c.id?'selected':'')} key={c.id} onClick={()=>setSelected(c.id)}><div className="row"><span className="row"><Channel platform={c.platform} small/><b>{c.author}</b></span><Badge status={c.status}/></div><p>{c.body}</p><small>{cName(c.client_id)} · {fmt(c.created_at)}</small></button>)}
             {!comments.length&&<Empty text="채널을 연결하면 실제 댓글과 상담이 여기에 표시됩니다."/>}
           </div>
           <div className="conversation-detail">
             {item?<><div className="detail-head"><div><h2>{item.author}</h2><span className="muted">{cName(item.client_id)} · <Channel platform={item.platform}/></span></div><Badge status={item.status}/></div>
               <div className="message-context">{item.context||'수집된 대화'}{item.context_url&&<a href={item.context_url} target="_blank" rel="noreferrer"><ExternalLink size={14}/> 원문</a>}</div>
               <div className="incoming"><span className="letter-avatar">{item.author?.slice(0,1)||'?'}</span><div><b>{item.author}</b><p>{item.body}</p><small>{fmt(item.created_at)}</small></div></div>
-              {item.platform==='naver'?<div className="reply-area naver-confirm"><div className="section-title"><h3><Check size={18}/>네이버 알림 확인</h3></div><p className="muted">네이버 블로그 홈의 새 댓글/새 답글 알림입니다. 이 채널은 알림 확인용으로 관리합니다.</p>{item.metadata?.display_datetime&&<p className="naver-source-time">네이버 표시 시간 · {item.metadata.display_datetime}</p>}<button className="primary" disabled={busy} onClick={confirmNaver}><Check size={16}/>확인</button></div>:
-              <div className="reply-area"><div className="section-title"><h3><Sparkles size={18}/>답변 작성</h3><button className="ai-button" disabled={busy||['sent','sending'].includes(item.status)} onClick={()=>reply('generate')}><Sparkles size={15}/>AI 답변 추천</button></div>
+              {item.platform==='naver'?<div className="reply-area naver-confirm"><div className="section-title"><h3><Check size={18}/>네이버 알림 확인</h3></div><p className="muted">네이버 블로그 홈의 새 댓글/새 답글 알림입니다. 이 채널은 알림 확인용으로 관리합니다.</p>{item.metadata?.display_datetime&&<p className="naver-source-time">네이버 표시 시간 · {item.metadata.display_datetime}</p>}<button className="primary" disabled={busy} onClick={()=>confirmItem(item)}><Check size={16}/>확인</button></div>:
+              <div className="reply-area"><div className="section-title"><h3><Sparkles size={18}/>답변 작성</h3><div className="row"><button className="secondary compact" disabled={busy||!['new','failed'].includes(item.status)} onClick={()=>confirmItem(item)}><Check size={15}/>확인</button><button className="ai-button" disabled={busy||['sent','sending'].includes(item.status)} onClick={()=>reply('generate')}><Sparkles size={15}/>AI 답변 추천</button></div></div>
                 <textarea value={draft} maxLength={2000} onChange={e=>setDraft(e.target.value)} placeholder="AI 추천을 받거나 직접 답변을 작성하세요." disabled={['sent','sending'].includes(item.status)}/>
                 <div className="approval-steps"><span className={draft?'done':''}>1 작성</span><ArrowRight size={14}/><span className={item.status==='approved'||item.status==='sent'?'done':''}>2 승인</span><ArrowRight size={14}/><span className={item.status==='sent'?'done':''}>3 전송</span></div>
                 <div className="reply-actions"><button className="secondary" disabled={busy||!draft.trim()} onClick={()=>reply('save')}>초안 저장</button><div className="row"><button className="secondary" disabled={busy||!draft.trim()} onClick={()=>reply('approve')}><Check size={16}/>승인</button><button className="primary" disabled={busy||item.status!=='approved'||draft!==item.approved_text} onClick={()=>reply('send')}><Send size={15}/>승인 답변 전송</button></div></div>
