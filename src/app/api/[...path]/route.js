@@ -52,12 +52,24 @@ async function upsertInbox(item){
   }
   const created=await db('inbox_items','','POST',item);
   const id=created[0]?.id;
+  const platformName=item.platform==='instagram'?'Instagram':item.platform==='naver'?'네이버 블로그':item.platform==='channel_talk'?'카카오 상담톡':'MOA';
+  const alertTitle=platformName+' 새 '+(item.kind==='comment'?'댓글':'문의');
+  const alertBody=(item.author?item.author+': ':'')+String(item.body||'').slice(0,160);
+  try{
+    await db('notifications','','POST',{
+      client_id:item.client_id||null,
+      title:alertTitle,
+      body:alertBody,
+      platform:item.platform||null
+    });
+  }catch(e){
+    console.error('Notification row create failed',e);
+  }
   try{
     const devices=await db('push_devices','enabled=eq.true&select=token');
-    const platformName=item.platform==='instagram'?'Instagram':item.platform==='naver'?'네이버 블로그':item.platform==='channel_talk'?'카카오 상담톡':'MOA';
     await sendPush(devices.map(x=>x.token),{
-      title:platformName+' 새 '+(item.kind==='comment'?'댓글':'문의'),
-      body:(item.author?item.author+': ':'')+String(item.body||'').slice(0,160),
+      title:alertTitle,
+      body:alertBody,
       data:{platform:item.platform,inbox_item_id:id||'',view:'inbox'}
     });
   }catch(e){
@@ -328,7 +340,6 @@ async function handle(req,ctx){
 
   if(route==='inbox/confirm'){
     const item=await row('inbox_items',b.id);
-    if(item.platform!=='naver')throw new HttpError('네이버 알림만 확인 처리할 수 있습니다.',409);
     await db('inbox_items',`id=eq.${item.id}`,'PATCH',{
       status:'confirmed',
       draft:null,
@@ -336,8 +347,28 @@ async function handle(req,ctx){
       approved_at:null,
       updated_at:new Date().toISOString()
     });
-    await audit('naver_notice_confirmed',item.id);
+    await audit('inbox_confirmed',item.id);
     return json({ok:true});
+  }
+
+  if(route==='inbox/confirm-bulk'){
+    const ids=Array.isArray(b.ids)?[...new Set(b.ids.filter(Boolean))].slice(0,300):[];
+    if(!ids.length)throw new HttpError('확인 처리할 항목이 없습니다.');
+    let count=0;
+    for(const id of ids){
+      const item=await row('inbox_items',id);
+      if(!['new','failed'].includes(item.status))continue;
+      await db('inbox_items',`id=eq.${item.id}`,'PATCH',{
+        status:'confirmed',
+        draft:null,
+        approved_text:null,
+        approved_at:null,
+        updated_at:new Date().toISOString()
+      });
+      await audit('inbox_confirmed_bulk',item.id);
+      count++;
+    }
+    return json({ok:true,count});
   }
 
   if(route==='integrations/naver'){
