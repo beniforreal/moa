@@ -222,12 +222,38 @@ async function handle(req,ctx){
     });
     const short=await tokenRes.json();
     if(!tokenRes.ok||!short.access_token)throw new HttpError('Instagram 토큰 발급 실패',502);
-    const longRes=await fetch('https://graph.instagram.com/access_token?'+new URLSearchParams({grant_type:'ig_exchange_token',client_secret:process.env.META_APP_SECRET,access_token:short.access_token}));
-    const long=await longRes.json();
-    if(!longRes.ok||!long.access_token)throw new HttpError('장기 토큰 발급 실패',502);
+    const longUrl=new URL('https://graph.instagram.com/access_token');
+    longUrl.search=new URLSearchParams({
+      grant_type:'ig_exchange_token',
+      client_secret:process.env.META_APP_SECRET,
+      access_token:short.access_token
+    }).toString();
+    const longRes=await fetch(longUrl,{method:'GET',cache:'no-store',signal:AbortSignal.timeout(25000)});
+    const long=await longRes.json().catch(()=>({}));
+    if(!longRes.ok||!long.access_token){
+      const metaMessage=String(long?.error?.message||'').slice(0,400);
+      const metaCode=long?.error?.code;
+      console.error('Instagram long token exchange failed',{
+        status:longRes.status,
+        code:metaCode,
+        type:long?.error?.type||null,
+        message:metaMessage||null
+      });
+      const accessHint=metaCode===100||/unsupported request|permission|access/i.test(metaMessage);
+      throw new HttpError(
+        accessHint
+          ? '장기 토큰 발급 실패: Meta가 이 Instagram 계정의 앱 접근을 허용하지 않았습니다. Instagram Tester 초대 수락 또는 앱의 Advanced Access/Access Verification 상태를 확인해 주세요.'
+          : '장기 토큰 발급 실패'+(metaMessage?': '+metaMessage:''),
+        502
+      );
+    }
     const temp={token_encrypted:encrypt(long.access_token)};
     const me=await instagramGraph(temp,'me?fields=user_id,username');
     const external=String(me.user_id||me.id);
+    const linked=await db('integrations',`platform=eq.instagram&external_id=eq.${encodeURIComponent(external)}`);
+    if(linked[0]&&linked[0].client_id!==state.client){
+      throw new HttpError('이 Instagram 계정은 이미 다른 고객사에 연결되어 있습니다. 기존 고객사에서 먼저 연결을 해제해 주세요.',409);
+    }
     await upsertIntegration(state.client,'instagram',{
       username:me.username||null,external_id:external,token_encrypted:temp.token_encrypted,
       token_expires_at:new Date(Date.now()+(long.expires_in||5184000)*1000).toISOString(),status:'connected'
