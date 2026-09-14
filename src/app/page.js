@@ -168,6 +168,21 @@ export default function App(){
     await run(async()=>{await api('posts',{...b,id:modal?.item?.id});await refresh();setToast('게시물을 저장했습니다.')});
   }
 
+  async function publishInstagramPost(post){
+    if(!post||post.platform!=='instagram')return;
+    if(!post.image_url){
+      setToast('Instagram 발행에는 공개 HTTPS 이미지 URL이 필요합니다.');
+      return;
+    }
+    if(!window.confirm('이 게시물을 실제 Instagram 계정에 발행할까요?'))return;
+    await run(async()=>{
+      await api('posts/publish',{id:post.id});
+      await refresh();
+      setModal(null);
+      setToast('Instagram 게시물 발행을 완료했습니다.');
+    });
+  }
+
   async function reply(action){
     if(!item)return;
     await run(async()=>{
@@ -346,7 +361,7 @@ export default function App(){
 
       {modal.type==='channel'&&<form onSubmit={e=>{e.preventDefault();const b=Object.fromEntries(new FormData(e.currentTarget));run(async()=>{await api('integrations/channel-talk',{client_id:modal.client.id,...b,test:'true'});await refresh();setModal(null);setToast('채널톡 OpenAPI 설정을 확인했습니다.')})}}><Channel platform="channel_talk"/><h2>채널톡 OpenAPI</h2><p className="muted">채널톡 → 보안 및 개발 → OpenAPI에서 발급한 키를 입력합니다.</p><label>채널 이름<input name="channel_name" defaultValue={modal.account?.username}/></label><label>Access Key<input name="access_key" required autoComplete="off"/></label><label>Access Secret<input name="access_secret" type="password" required autoComplete="new-password"/></label><p className="safety-note"><LockKeyhole size={14}/>Secret은 AES-256-GCM으로 암호화해 Supabase에 저장합니다.</p><button className="primary full" disabled={busy}>저장하고 API 확인</button></form>}
 
-      {modal.type==='detail'&&<><Channel platform={modal.item.platform}/><h2>{modal.item.title}</h2><div className="row"><span className="muted">{cName(modal.item.client_id)} · {modal.item.scheduled_at?'예정 '+fmt(modal.item.scheduled_at):'날짜 미정'}</span><Badge status={modal.item.status}/></div><div className="post-body">{modal.item.body}</div><div className="detail-buttons">{['draft','planned'].includes(modal.item.status)&&<button className="primary" onClick={()=>setModal({type:'post',item:modal.item})}><CalendarDays size={16}/>내용·날짜 수정</button>}<button className="secondary" onClick={()=>navigator.clipboard.writeText(modal.item.title+'\n\n'+modal.item.body).then(()=>setToast('원고를 복사했습니다.'))}><Copy size={16}/>원고 복사</button>{modal.item.platform==='naver'&&<a className="secondary" href="https://blog.naver.com" target="_blank" rel="noreferrer">블로그 열기 <ExternalLink size={15}/></a>}</div></>}
+      {modal.type==='detail'&&<><Channel platform={modal.item.platform}/><h2>{modal.item.title}</h2><div className="row"><span className="muted">{cName(modal.item.client_id)} · {modal.item.scheduled_at?'예정 '+fmt(modal.item.scheduled_at):'날짜 미정'}</span><Badge status={modal.item.status}/></div><div className="post-body">{modal.item.body}</div><div className="detail-buttons">{['draft','planned'].includes(modal.item.status)&&<button className="primary" onClick={()=>setModal({type:'post',item:modal.item})}><CalendarDays size={16}/>내용·날짜 수정</button>}{modal.item.platform==='instagram'&&['draft','planned','failed'].includes(modal.item.status)&&<button className="publish-instagram" disabled={busy||!modal.item.image_url} onClick={()=>publishInstagramPost(modal.item)}><Instagram size={16}/>Instagram에 발행</button>}<button className="secondary" onClick={()=>navigator.clipboard.writeText(modal.item.title+'\n\n'+modal.item.body).then(()=>setToast('원고를 복사했습니다.'))}><Copy size={16}/>원고 복사</button>{modal.item.platform==='naver'&&<a className="secondary" href="https://blog.naver.com" target="_blank" rel="noreferrer">블로그 열기 <ExternalLink size={15}/></a>}</div>{modal.item.platform==='instagram'&&!modal.item.image_url&&['draft','planned','failed'].includes(modal.item.status)&&<p className="publish-hint">발행하려면 먼저 수정에서 공개 HTTPS 이미지 URL을 입력하세요.</p>}</>}
 
       {modal.type==='notifications'&&<><h2>알림</h2>{data.notifications.length?data.notifications.map(n=><div className="notification-row" key={n.id}><b>{n.title}</b><p>{n.body}</p><small>{fmt(n.created_at)}</small></div>):<Empty text="실제 알림이 없습니다."/>}</>}
     </section></div>}
