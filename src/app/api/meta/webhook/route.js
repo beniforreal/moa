@@ -60,12 +60,13 @@ function matchedKeyword(text,post){
 async function tryAutoDm(account,change,inbox){
   const mediaId=String(change.value?.media?.id||'');
   if(!mediaId||!inbox?.id)return;
-  if(['sent','confirmed','auto_dm_sent','auto_dm_sending'].includes(inbox.status))return;
+  if(['sent','confirmed','sending'].includes(inbox.status))return;
   if(inbox.metadata?.auto_dm?.attempted)return;
 
   const posts=await db('posts',`client_id=eq.${account.client_id}&platform=eq.instagram&external_id=eq.${encodeURIComponent(mediaId)}&auto_dm_enabled=eq.true&limit=1`);
   const post=posts[0];
   if(!post?.auto_dm_message)return;
+
   const keyword=matchedKeyword(change.value?.text,post);
   if(!keyword)return;
 
@@ -76,7 +77,7 @@ async function tryAutoDm(account,change,inbox){
     attempted_at:new Date().toISOString()
   };
   await db('inbox_items',`id=eq.${inbox.id}`,'PATCH',{
-    status:'auto_dm_sending',
+    status:'sending',
     metadata:{...(inbox.metadata||{}),auto_dm:attempt},
     updated_at:new Date().toISOString()
   });
@@ -88,7 +89,10 @@ async function tryAutoDm(account,change,inbox){
     });
     const sentAt=new Date().toISOString();
     await db('inbox_items',`id=eq.${inbox.id}`,'PATCH',{
-      status:'auto_dm_sent',
+      status:'sent',
+      draft:post.auto_dm_message,
+      approved_text:post.auto_dm_message,
+      approved_at:sentAt,
       reply_external_id:sent.message_id||sent.id||null,
       metadata:{...(inbox.metadata||{}),auto_dm:{...attempt,sent:true,sent_at:sentAt,message_id:sent.message_id||sent.id||null}},
       updated_at:sentAt
