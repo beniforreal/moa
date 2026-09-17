@@ -25,12 +25,31 @@ const cleanKeywords=value=>{
   const source=Array.isArray(value)?value:String(value||'').split(',');
   return [...new Set(source.map(x=>String(x||'').trim()).filter(Boolean))].slice(0,10).map(x=>x.slice(0,40));
 };
+const normalize=value=>String(value||'').trim().toLocaleLowerCase('ko-KR');
+function matchedKeyword(text,post){
+  const source=normalize(text);
+  if(!source)return '';
+  for(const raw of post.auto_dm_keywords||[]){
+    const keyword=normalize(raw);
+    if(!keyword)continue;
+    if(post.auto_dm_match==='exact'?source===keyword:source.includes(keyword))return String(raw);
+  }
+  return '';
+}
 
 function makeTitle(media){
   const caption=String(media.caption||'').replace(/\s+/g,' ').trim();
   if(caption)return caption.slice(0,80);
   const type=media.media_product_type||media.media_type||'POST';
   return `Instagram ${type}`;
+}
+
+async function ensureWebhookSubscription(account){
+  await instagramGraph(account,`${account.external_id}/subscribed_apps?subscribed_fields=comments,messages`,'POST');
+  await db('integrations',`id=eq.${account.id}`,'PATCH',{
+    last_sync_at:new Date().toISOString(),
+    config:{...(account.config||{}),webhook_subscription:'comments,messages',webhook_repaired_at:new Date().toISOString()}
+  });
 }
 
 async function syncInstagramPosts(clientId){
@@ -46,8 +65,7 @@ async function syncInstagramPosts(clientId){
       body:String(item.caption||''),
       external_url:item.permalink||null,
       scheduled_at:item.timestamp||null,
-      status:'published',
-      updated_at:new Date().toISOString()
+      status:'published'
     };
     const thumb=item.thumbnail_url||(item.media_type==='IMAGE'?item.media_url:null);
     if(thumb)patch.image_url=thumb;
@@ -67,6 +85,93 @@ async function syncInstagramPosts(clientId){
   return imported;
 }
 
+async function upsertRecoveredComment(account,post,comment){
+  const externalId=String(comment.id||'');
+  if(!externalId)return null;
+  const existing=await db('inbox_items',`platform=eq.instagram&external_id=eq.${encodeURIComponent(externalId)}&limit=1`);
+  if(existing[0])return existing[0];
+  const author=comment.username||comment.from?.username||comment.from?.id||'Instagram 사용자';
+  const created=(await db('inbox_items','','POST',{
+    client_id:account.client_id,
+    platform:'instagram',
+    kind:'comment',
+    external_id:externalId,
+    author:String(author),
+    body:String(comment.text||''),
+    context:String(post.external_id),
+    context_url:post.external_url||null,
+    status:'new',
+    created_at:comment.timestamp||new Date().toISOString(),
+    metadata:{raw:comment,recovered:true}
+  }))[0];
+  return created;
+}
+
+async function sendAutoDm(account,post,inbox,commentId,keyword){
+  const attempt={attempted:true,post_id:post.id,keyword,attempted_at:new Date().toISOString()};
+  await db('inbox_items',`id=eq.${inbox.id}`,'PATCH',{
+    status:'sending',
+    metadata:{...(inbox.metadata||{}),auto_dm:attempt},
+    updated_at:new Date().toISOString()
+  });
+  try{
+    const sent=await instagramGraph(account,`${account.external_id}/messages`,'POST',{
+      recipient:{comment_id:String(commentId)},
+      message:{text:post.auto_dm_message}
+    });
+    const sentAt=new Date().toISOString();
+    const messageId=sent.message_id||sent.id||null;
+    await db('inbox_items',`id=eq.${inbox.id}`,'PATCH',{
+      status:'sent',draft:post.auto_dm_message,approved_text:post.auto_dm_message,approved_at:sentAt,
+      reply_external_id:messageId,
+      metadata:{...(inbox.metadata||{}),auto_dm:{...attempt,sent:true,sent_at:sentAt,message_id:messageId}},
+      updated_at:sentAt
+    });
+    await db('posts',`id=eq.${post.id}`,'PATCH',{
+      auto_dm_sent_count:Number(post.auto_dm_sent_count||0)+1,
+      auto_dm_last_sent_at:sentAt
+    });
+    await db('audit_logs','','POST',{action:'instagram_auto_dm_sent',target_id:String(inbox.id)});
+    return true;
+  }catch(e){
+    const failedAt=new Date().toISOString();
+    await db('inbox_items',`id=eq.${inbox.id}`,'PATCH',{
+      status:'failed',
+      metadata:{...(inbox.metadata||{}),auto_dm:{...attempt,sent:false,failed_at:failedAt,error:String(e?.message||'전송 실패').slice(0,500)}},
+      updated_at:failedAt
+    });
+    await db('audit_logs','','POST',{action:'instagram_auto_dm_failed',target_id:String(inbox.id)});
+    throw e;
+  }
+}
+
+async function recoverEnabledPostComments(account,posts){
+  let recovered=0,sent=0,failed=0;
+  for(const post of posts.filter(x=>x.auto_dm_enabled&&x.external_id&&x.auto_dm_message)){
+    let result;
+    try{
+      result=await instagramGraph(account,`${post.external_id}/comments?fields=id,text,username,timestamp,from&limit=50`);
+    }catch(e){
+      console.error('Instagram comment recovery failed',post.external_id,e);
+      continue;
+    }
+    const enabledAt=new Date(post.auto_dm_enabled_at||post.updated_at||0).getTime();
+    for(const comment of result.data||[]){
+      const keyword=matchedKeyword(comment.text,post);
+      if(!keyword)continue;
+      const commentTime=comment.timestamp?new Date(comment.timestamp).getTime():Date.now();
+      if(enabledAt&&commentTime+60000<enabledAt)continue;
+      const inbox=await upsertRecoveredComment(account,post,comment);
+      if(!inbox)continue;
+      if(inbox.metadata?.auto_dm?.attempted||['sent','sending'].includes(inbox.status))continue;
+      recovered++;
+      try{if(await sendAutoDm(account,post,inbox,comment.id,keyword))sent++}
+      catch(e){failed++;console.error('Recovered auto DM failed',comment.id,e)}
+    }
+  }
+  return {recovered,sent,failed};
+}
+
 async function handle(req){
   requireLogin(req);
 
@@ -76,16 +181,22 @@ async function handle(req){
     if(!clientId)throw new HttpError('고객사를 선택해 주세요.');
     await row('clients',clientId);
     const account=await instagramAccount(clientId);
-    let syncError='';
-    let imported=0;
-    try{imported=await syncInstagramPosts(clientId)}
-    catch(e){syncError=e instanceof Error?e.message:'Instagram 게시물을 불러오지 못했습니다.'}
-    const posts=await db('posts',`client_id=eq.${clientId}&platform=eq.instagram&external_id=not.is.null&order=scheduled_at.desc.nullslast,created_at.desc&limit=100`);
+    let syncError='',subscriptionError='',imported=0;
+    try{await ensureWebhookSubscription(account)}catch(e){subscriptionError=e instanceof Error?e.message:'Webhook 구독을 확인하지 못했습니다.'}
+    try{imported=await syncInstagramPosts(clientId)}catch(e){syncError=e instanceof Error?e.message:'Instagram 게시물을 불러오지 못했습니다.'}
+    let posts=await db('posts',`client_id=eq.${clientId}&platform=eq.instagram&external_id=not.is.null&order=scheduled_at.desc.nullslast,created_at.desc&limit=100`);
+    let recovery={recovered:0,sent:0,failed:0};
+    try{recovery=await recoverEnabledPostComments(account,posts)}catch(e){console.error('Auto DM recovery failed',e)}
+    if(recovery.sent||recovery.failed)posts=await db('posts',`client_id=eq.${clientId}&platform=eq.instagram&external_id=not.is.null&order=scheduled_at.desc.nullslast,created_at.desc&limit=100`);
+    const inbox=await db('inbox_items',`client_id=eq.${clientId}&platform=eq.instagram&order=created_at.desc&limit=500`);
+    const history=inbox.filter(x=>x.metadata?.auto_dm?.attempted).map(x=>({
+      id:x.id,post_id:x.metadata?.auto_dm?.post_id||null,author:x.author||'Instagram 사용자',body:x.body||'',status:x.status,
+      keyword:x.metadata?.auto_dm?.keyword||'',sent_at:x.metadata?.auto_dm?.sent_at||null,failed_at:x.metadata?.auto_dm?.failed_at||null,
+      error:x.metadata?.auto_dm?.error||'',created_at:x.created_at
+    }));
     return json({
-      account:{username:account.username||'',status:account.status||''},
-      posts,
-      imported,
-      sync_error:syncError
+      account:{username:account.username||'',status:account.status||''},posts,history,imported,recovery,
+      sync_error:syncError,subscription_error:subscriptionError
     });
   }
 
@@ -95,7 +206,7 @@ async function handle(req){
 
   const post=await row('posts',body.post_id);
   if(post.platform!=='instagram'||!post.external_id)throw new HttpError('실제 Instagram 게시물에만 자동 DM을 설정할 수 있습니다.',409);
-  await instagramAccount(post.client_id);
+  const account=await instagramAccount(post.client_id);
 
   const enabled=body.enabled===true||body.enabled==='true';
   const keywords=cleanKeywords(body.keywords);
@@ -105,13 +216,17 @@ async function handle(req){
   if(enabled&&!message)throw new HttpError('자동으로 보낼 DM 내용을 입력해 주세요.');
   if(message.length>1000)throw new HttpError('자동 DM은 1,000자 이내로 입력해 주세요.');
 
+  const wasEnabled=!!post.auto_dm_enabled;
+  const now=new Date().toISOString();
   await db('posts',`id=eq.${post.id}`,'PATCH',{
     auto_dm_enabled:enabled,
     auto_dm_keywords:keywords,
     auto_dm_message:message||null,
     auto_dm_match:match,
-    updated_at:new Date().toISOString()
+    auto_dm_enabled_at:enabled&&!wasEnabled?now:(post.auto_dm_enabled_at||null),
+    updated_at:now
   });
+  try{await ensureWebhookSubscription(account)}catch(e){console.error('Webhook subscription repair on save failed',e)}
   await db('audit_logs','','POST',{action:enabled?'instagram_auto_dm_enabled':'instagram_auto_dm_disabled',target_id:String(post.id)});
   return json({ok:true});
 }
