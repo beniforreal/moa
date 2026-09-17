@@ -70,12 +70,7 @@ async function tryAutoDm(account,change,inbox){
   const keyword=matchedKeyword(change.value?.text,post);
   if(!keyword)return;
 
-  const attempt={
-    attempted:true,
-    post_id:post.id,
-    keyword,
-    attempted_at:new Date().toISOString()
-  };
+  const attempt={attempted:true,post_id:post.id,keyword,attempted_at:new Date().toISOString()};
   await db('inbox_items',`id=eq.${inbox.id}`,'PATCH',{
     status:'sending',
     metadata:{...(inbox.metadata||{}),auto_dm:attempt},
@@ -88,19 +83,19 @@ async function tryAutoDm(account,change,inbox){
       message:{text:post.auto_dm_message}
     });
     const sentAt=new Date().toISOString();
+    const messageId=sent.message_id||sent.id||null;
     await db('inbox_items',`id=eq.${inbox.id}`,'PATCH',{
       status:'sent',
       draft:post.auto_dm_message,
       approved_text:post.auto_dm_message,
       approved_at:sentAt,
-      reply_external_id:sent.message_id||sent.id||null,
-      metadata:{...(inbox.metadata||{}),auto_dm:{...attempt,sent:true,sent_at:sentAt,message_id:sent.message_id||sent.id||null}},
+      reply_external_id:messageId,
+      metadata:{...(inbox.metadata||{}),auto_dm:{...attempt,sent:true,sent_at:sentAt,message_id:messageId}},
       updated_at:sentAt
     });
     await db('posts',`id=eq.${post.id}`,'PATCH',{
       auto_dm_sent_count:Number(post.auto_dm_sent_count||0)+1,
-      auto_dm_last_sent_at:sentAt,
-      updated_at:sentAt
+      auto_dm_last_sent_at:sentAt
     });
     try{
       await db('notifications','','POST',{
@@ -111,11 +106,12 @@ async function tryAutoDm(account,change,inbox){
       });
     }catch(e){console.error('Auto DM notification failed',e)}
   }catch(e){
+    const failedAt=new Date().toISOString();
     console.error('Instagram auto DM failed',e);
     await db('inbox_items',`id=eq.${inbox.id}`,'PATCH',{
       status:'failed',
-      metadata:{...(inbox.metadata||{}),auto_dm:{...attempt,sent:false,failed_at:new Date().toISOString()}},
-      updated_at:new Date().toISOString()
+      metadata:{...(inbox.metadata||{}),auto_dm:{...attempt,sent:false,failed_at:failedAt,error:String(e?.message||'전송 실패').slice(0,500)}},
+      updated_at:failedAt
     });
   }
 }
