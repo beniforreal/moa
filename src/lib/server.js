@@ -56,10 +56,17 @@ export async function instagramGraph(a,path,method='GET',body){
     method,
     headers:{Authorization:`Bearer ${decrypt(a.token_encrypted)}`,'Content-Type':'application/json'},
     body:body?JSON.stringify(body):undefined,
-    signal:AbortSignal.timeout(25000)
+    signal:AbortSignal.timeout(25000),
+    cache:'no-store'
   });
   const data=await r.json().catch(()=>({}));
-  if(!r.ok||data.error)throw new HttpError('Instagram 요청이 실패했습니다. 권한과 Meta 앱 설정을 확인해 주세요.',502);
+  if(!r.ok||data.error){
+    const code=data?.error?.code;
+    const message=String(data?.error?.message||'').slice(0,300);
+    console.error('Instagram Graph error',{path,method,status:r.status,code:code||null,message:message||null});
+    const detail=[code?`Meta #${code}`:null,message||null].filter(Boolean).join(' · ');
+    throw new HttpError('Instagram 요청이 실패했습니다'+(detail?` (${detail})`:'')+'. 권한과 Meta 앱 설정을 확인해 주세요.',502);
+  }
   return data;
 }
 
