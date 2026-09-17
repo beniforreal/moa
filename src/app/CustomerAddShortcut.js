@@ -83,7 +83,7 @@ export default function CustomerAddShortcut(){
           {error&&<p style={{margin:0,padding:'10px 12px',borderRadius:10,background:'#fff4f4',color:'#a33a3a',fontSize:13}}>{error}</p>}
           <button type="submit" disabled={busy} style={{
             border:0,borderRadius:12,padding:'12px 16px',background:'#244f39',color:'#fff',fontWeight:800,
-            cursor:busy?'default':'pointer',opacity:busy?.65:1
+            cursor:busy?'default':'pointer',opacity:busy?0.65:1
           }}>{busy?'저장 중...':'고객사 저장'}</button>
         </form>
       </section>
