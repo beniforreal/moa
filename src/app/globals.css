@@ -416,3 +416,9 @@ main{padding:32px 34px 42px}
 @media(max-width:1100px){.shortcut-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:900px){.dashboard-grid{grid-template-columns:1fr}.shortcut-grid{grid-template-columns:1fr}}
 @media(max-width:680px){.inbox-filter-row{align-items:stretch}.inbox-bulk{padding-left:9px;padding-right:9px;font-size:11px}.channel-shortcuts>.section-title{padding-left:18px;padding-right:18px}.shortcut-grid{padding-left:18px;padding-right:18px}}
+
+
+/* TikTok channel */
+.channel.tiktok{color:#222}
+.channel.tiktok.small{background:#f4f4f4;color:#222}
+.shortcut-actions a[href*="tiktok.com"]{color:#222}
