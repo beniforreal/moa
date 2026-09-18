@@ -89,3 +89,26 @@ export async function channelTalkRequest(a,path,method='GET',body){
   if(!r.ok)throw new HttpError('채널톡 OpenAPI 요청이 실패했습니다. 유료 플랜과 API 키를 확인해 주세요.',502);
   return data;
 }
+
+
+export async function tiktokBusinessRequest(a,path,method='GET',body){
+  if(!a?.credential_encrypted)throw new HttpError('TikTok Business API 인증정보를 먼저 저장해 주세요.',409);
+  let credential;
+  try{credential=JSON.parse(decrypt(a.credential_encrypted))}catch{throw new HttpError('TikTok 인증정보를 읽을 수 없습니다.',500)}
+  const token=need(credential.accessToken,'TikTok Access Token');
+  const r=await fetch(`https://business-api.tiktok.com/open_api/v1.3/${path}`,{
+    method,
+    headers:{'Access-Token':token,'Content-Type':'application/json'},
+    body:body?JSON.stringify(body):undefined,
+    signal:AbortSignal.timeout(25000),
+    cache:'no-store'
+  });
+  const data=await r.json().catch(()=>({}));
+  if(!r.ok||Number(data.code||0)!==0){
+    const code=data?.code;
+    const message=String(data?.message||'').slice(0,300);
+    console.error('TikTok Business API error',{path,method,status:r.status,code:code||null,message:message||null});
+    throw new HttpError('TikTok Business API 요청이 실패했습니다'+(message?` (${message})`:'')+'. API 권한과 Business Messaging 접근 권한을 확인해 주세요.',502);
+  }
+  return data;
+}
