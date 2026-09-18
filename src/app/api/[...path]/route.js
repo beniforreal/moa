@@ -1,6 +1,6 @@
 import {NextResponse} from 'next/server';
 import {randomBytes,createHmac,timingSafeEqual} from 'node:crypto';
-import {configured,db,row,integration,instagramAccount,instagramGraph,channelTalkRequest,HttpError,need,textValue} from '../../../lib/server';
+import {configured,db,row,integration,instagramAccount,instagramGraph,channelTalkRequest,tiktokBusinessRequest,HttpError,need,textValue} from '../../../lib/server';
 import {encrypt,decrypt,verifySignature,canApprove,canSend} from '../../../lib/security.mjs';
 import {pushConfigured,sendPush} from '../../../lib/push.mjs';
 
@@ -52,7 +52,7 @@ async function upsertInbox(item){
   }
   const created=await db('inbox_items','','POST',item);
   const id=created[0]?.id;
-  const platformName=item.platform==='instagram'?'Instagram':item.platform==='naver'?'네이버 블로그':item.platform==='channel_talk'?'카카오 상담톡':'MOA';
+  const platformName=item.platform==='instagram'?'Instagram':item.platform==='naver'?'네이버 블로그':item.platform==='channel_talk'?'카카오 상담톡':item.platform==='tiktok'?'TikTok':'MOA';
   const alertTitle=platformName+' 새 '+(item.kind==='comment'?'댓글':'문의');
   const alertBody=(item.author?item.author+': ':'')+String(item.body||'').slice(0,160);
   try{
@@ -392,6 +392,25 @@ async function handle(req,ctx){
     return json({ok:true});
   }
 
+  if(route==='integrations/tiktok'){
+    const businessId=textValue(b.business_id,200);
+    const accessToken=textValue(b.access_token,4096);
+    const username=String(b.username||'').replace(/^@/,'').trim().slice(0,200)||null;
+    const saved=await upsertIntegration(b.client_id,'tiktok',{
+      username,
+      external_id:businessId,
+      credential_encrypted:encrypt(JSON.stringify({accessToken,businessId})),
+      status:'configured',
+      config:{source:'tiktok-business-api',business_messaging_requested:true}
+    });
+    if(b.test===true||b.test==='true'){
+      await tiktokBusinessRequest(saved,'tt_user/token_info/get/');
+      await db('integrations',`id=eq.${saved.id}`,'PATCH',{status:'connected',last_sync_at:new Date().toISOString()});
+    }
+    await audit('tiktok_credentials_saved',saved.id);
+    return json({ok:true});
+  }
+
   if(route==='instagram/connect'){
     await row('clients',b.client_id);
     const appId=need(process.env.META_APP_ID,'Instagram App ID');
@@ -414,7 +433,7 @@ async function handle(req,ctx){
 
   if(route==='posts'){
     await row('clients',b.client_id);
-    if(!['naver','instagram','schedule_plan','schedule_general','schedule_other'].includes(b.platform))throw new HttpError('카테고리를 선택해 주세요.');
+    if(!['naver','instagram','tiktok','schedule_plan','schedule_general','schedule_other'].includes(b.platform))throw new HttpError('카테고리를 선택해 주세요.');
     const scheduleOnly=b.platform.startsWith('schedule_');
     if(b.scheduled_at&&isNaN(Date.parse(b.scheduled_at)))throw new HttpError('일정을 확인해 주세요.');
     if(scheduleOnly&&!b.scheduled_at)throw new HttpError('일정 카테고리는 날짜를 지정해 주세요.');
@@ -493,6 +512,8 @@ async function handle(req,ctx){
         await db('inbox_items',`id=eq.${item.id}`,'PATCH',{status:'sending'});
       }else if(item.platform==='channel_talk'){
         throw new HttpError('채널톡 답변 전송은 OpenAPI 메시지 전송 규격을 채널 계정에서 확인한 뒤 활성화합니다. 현재는 수신·AI 초안·승인까지 지원합니다.',409);
+      }else if(item.platform==='tiktok'){
+        throw new HttpError('TikTok은 Business Messaging API 권한 승인과 Webhook 연결 후 MOA에서 전송을 활성화합니다. 현재는 연결정보 저장 구조까지 준비되어 있습니다.',409);
       }
       await audit('reply_send_requested',item.id);
       return json({ok:true});
