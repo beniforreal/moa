@@ -84,13 +84,27 @@ async function tryAutoDm(account,change,inbox){
     });
     const sentAt=new Date().toISOString();
     const messageId=sent.message_id||sent.id||null;
+    let commentReply=null;
+    const replyText=String(post.auto_dm_comment_reply||'').trim();
+    if(replyText){
+      commentReply={attempted:true,text:replyText,attempted_at:new Date().toISOString(),sent:false};
+      try{
+        const reply=await instagramGraph(account,`${encodeURIComponent(String(change.value.id))}/replies`,'POST',{message:replyText});
+        commentReply={...commentReply,sent:true,sent_at:new Date().toISOString(),reply_id:reply.id||null};
+        await db('audit_logs','','POST',{action:'instagram_auto_dm_comment_reply_sent',target_id:String(inbox.id)});
+      }catch(replyError){
+        commentReply={...commentReply,sent:false,failed_at:new Date().toISOString(),error:String(replyError?.message||'대댓글 전송 실패').slice(0,500)};
+        console.error('Instagram auto DM comment reply failed',replyError);
+        await db('audit_logs','','POST',{action:'instagram_auto_dm_comment_reply_failed',target_id:String(inbox.id)});
+      }
+    }
     await db('inbox_items',`id=eq.${inbox.id}`,'PATCH',{
       status:'sent',
       draft:post.auto_dm_message,
       approved_text:post.auto_dm_message,
       approved_at:sentAt,
       reply_external_id:messageId,
-      metadata:{...(inbox.metadata||{}),auto_dm:{...attempt,sent:true,sent_at:sentAt,message_id:messageId}},
+      metadata:{...(inbox.metadata||{}),auto_dm:{...attempt,sent:true,sent_at:sentAt,message_id:messageId,comment_reply:commentReply}},
       updated_at:sentAt
     });
     await db('posts',`id=eq.${post.id}`,'PATCH',{
