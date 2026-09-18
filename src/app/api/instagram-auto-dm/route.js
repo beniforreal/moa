@@ -121,10 +121,24 @@ async function sendAutoDm(account,post,inbox,commentId,keyword){
     });
     const sentAt=new Date().toISOString();
     const messageId=sent.message_id||sent.id||null;
+    let commentReply=null;
+    const replyText=String(post.auto_dm_comment_reply||'').trim();
+    if(replyText){
+      commentReply={attempted:true,text:replyText,attempted_at:new Date().toISOString(),sent:false};
+      try{
+        const reply=await instagramGraph(account,`${encodeURIComponent(String(commentId))}/replies`,'POST',{message:replyText});
+        commentReply={...commentReply,sent:true,sent_at:new Date().toISOString(),reply_id:reply.id||null};
+        await db('audit_logs','','POST',{action:'instagram_auto_dm_comment_reply_sent',target_id:String(inbox.id)});
+      }catch(replyError){
+        commentReply={...commentReply,sent:false,failed_at:new Date().toISOString(),error:String(replyError?.message||'대댓글 전송 실패').slice(0,500)};
+        console.error('Instagram auto DM comment reply failed',replyError);
+        await db('audit_logs','','POST',{action:'instagram_auto_dm_comment_reply_failed',target_id:String(inbox.id)});
+      }
+    }
     await db('inbox_items',`id=eq.${inbox.id}`,'PATCH',{
       status:'sent',draft:post.auto_dm_message,approved_text:post.auto_dm_message,approved_at:sentAt,
       reply_external_id:messageId,
-      metadata:{...(inbox.metadata||{}),auto_dm:{...attempt,sent:true,sent_at:sentAt,message_id:messageId}},
+      metadata:{...(inbox.metadata||{}),auto_dm:{...attempt,sent:true,sent_at:sentAt,message_id:messageId,comment_reply:commentReply}},
       updated_at:sentAt
     });
     await db('posts',`id=eq.${post.id}`,'PATCH',{
@@ -192,7 +206,8 @@ async function handle(req){
     const history=inbox.filter(x=>x.metadata?.auto_dm?.attempted).map(x=>({
       id:x.id,post_id:x.metadata?.auto_dm?.post_id||null,author:x.author||'Instagram 사용자',body:x.body||'',status:x.status,
       keyword:x.metadata?.auto_dm?.keyword||'',sent_at:x.metadata?.auto_dm?.sent_at||null,failed_at:x.metadata?.auto_dm?.failed_at||null,
-      error:x.metadata?.auto_dm?.error||'',created_at:x.created_at
+      error:x.metadata?.auto_dm?.error||'',created_at:x.created_at,
+      comment_reply:x.metadata?.auto_dm?.comment_reply||null
     }));
     return json({
       account:{username:account.username||'',status:account.status||''},posts,history,imported,recovery,
@@ -212,9 +227,11 @@ async function handle(req){
   const keywords=cleanKeywords(body.keywords);
   const match=body.match==='exact'?'exact':'contains';
   const message=String(body.message||'').trim();
+  const commentReply=String(body.comment_reply||'').trim();
   if(enabled&&!keywords.length)throw new HttpError('자동 DM을 켜려면 키워드를 1개 이상 입력해 주세요.');
   if(enabled&&!message)throw new HttpError('자동으로 보낼 DM 내용을 입력해 주세요.');
   if(message.length>1000)throw new HttpError('자동 DM은 1,000자 이내로 입력해 주세요.');
+  if(commentReply.length>2200)throw new HttpError('자동 대댓글은 2,200자 이내로 입력해 주세요.');
 
   const wasEnabled=!!post.auto_dm_enabled;
   const now=new Date().toISOString();
@@ -222,6 +239,7 @@ async function handle(req){
     auto_dm_enabled:enabled,
     auto_dm_keywords:keywords,
     auto_dm_message:message||null,
+    auto_dm_comment_reply:commentReply||null,
     auto_dm_match:match,
     auto_dm_enabled_at:enabled&&!wasEnabled?now:(post.auto_dm_enabled_at||null),
     updated_at:now
