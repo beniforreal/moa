@@ -3,7 +3,7 @@ import {useEffect,useMemo,useRef,useState} from 'react';
 import {
   LayoutDashboard,PenLine,Inbox,Building2,Settings,Plus,ArrowRight,Search,Bell,Check,Send,
   Sparkles,Instagram,ExternalLink,LockKeyhole,X,Menu,RefreshCw,ShieldCheck,MessageCircle,
-  FileText,Link2,KeyRound,Database,Zap,Cloud,Copy,Trash2,CalendarDays,ChevronLeft,ChevronRight
+  FileText,Link2,KeyRound,Database,Zap,Cloud,Copy,Trash2,CalendarDays,ChevronLeft,ChevronRight,Music2
 } from 'lucide-react';
 
 const EMPTY={clients:[],posts:[],comments:[],accounts:[],notifications:[]};
@@ -25,6 +25,7 @@ function Channel({platform,small=false}){
   const cls='channel '+platform+(small?' small':'');
   if(platform==='naver')return <span className={cls}><b>N</b>{!small&&'네이버 블로그'}</span>;
   if(platform==='channel_talk')return <span className={cls}><MessageCircle size={small?13:16}/>{!small&&'카카오 상담톡'}</span>;
+  if(platform==='tiktok')return <span className={cls}><Music2 size={small?13:16}/>{!small&&'TikTok'}</span>;
   if(platform==='schedule_plan')return <span className={cls}><CalendarDays size={small?13:16}/>{!small&&'예정'}</span>;
   if(platform==='schedule_general')return <span className={cls}><CalendarDays size={small?13:16}/>{!small&&'일반 일정'}</span>;
   if(platform==='schedule_other')return <span className={cls}><FileText size={small?13:16}/>{!small&&'기타 일정'}</span>;
@@ -75,7 +76,7 @@ export default function App(){
       const fresh=(d.comments||[]).filter(x=>!knownInboxIds.current.has(x.id)&&['new','failed'].includes(x.status));
       if(fresh.length){
         const newest=fresh[0];
-        const source=newest.platform==='instagram'?'Instagram':newest.platform==='naver'?'네이버 블로그':newest.platform==='channel_talk'?'카카오 상담톡':'MOA';
+        const source=newest.platform==='instagram'?'Instagram':newest.platform==='naver'?'네이버 블로그':newest.platform==='channel_talk'?'카카오 상담톡':newest.platform==='tiktok'?'TikTok':'MOA';
         const message=`${source} 새 ${newest.kind==='comment'?'댓글':'문의'} · ${newest.author||'새 사용자'}`;
         setToast(message);
         if(typeof window!=='undefined'&&!window.MoaAndroid&&'Notification' in window&&Notification.permission==='granted'){
@@ -325,10 +326,12 @@ export default function App(){
               const ig=account(c.id,'instagram');
               const nv=account(c.id,'naver');
               const kt=account(c.id,'channel_talk');
+              const tt=account(c.id,'tiktok');
               return <div className="shortcut-client" key={c.id}><b>{c.name}</b><div className="shortcut-actions">
                 {ig?.username?<a href={'https://www.instagram.com/'+ig.username.replace(/^@/,'')} target="_blank" rel="noreferrer"><Instagram size={15}/>Instagram</a>:<span className="disabled"><Instagram size={15}/>Instagram</span>}
                 {nv?.username?<a href={'https://blog.naver.com/'+nv.username} target="_blank" rel="noreferrer"><b className="naver-n">N</b>네이버</a>:<span className="disabled"><b className="naver-n">N</b>네이버</span>}
                 <button className={kt?.configured||kt?.status==='connected'?'':'disabled'} onClick={()=>{setClient(c.id);setPlatformFilter('channel_talk');setSelected('');go('inbox')}}><MessageCircle size={15}/>카카오</button>
+                {tt?.username?<a href={'https://www.tiktok.com/@'+tt.username.replace(/^@/,'')} target="_blank" rel="noreferrer"><Music2 size={15}/>TikTok</a>:<span className="disabled"><Music2 size={15}/>TikTok</span>}
               </div></div>
             })}</div>:<Empty text="고객사를 등록하면 채널 바로가기가 표시됩니다."/>}
           </section>
@@ -355,7 +358,7 @@ export default function App(){
 
         {view==='inbox'&&<section className="inbox-layout panel">
           <div className="conversation-list">
-            <div className="inbox-filters"><div className="inbox-filter-row"><div className="search"><Search size={16}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="대화 검색"/></div><button className="secondary inbox-bulk" disabled={busy||!confirmableVisible.length} onClick={confirmVisible}><Check size={15}/>일괄 확인 {confirmableVisible.length||''}</button></div><div className="tabs channel-tabs">{[['all','전체'],['instagram','Instagram'],['naver','네이버'],['channel_talk','카카오']].map(([id,label])=><button key={id} className={platformFilter===id?'selected':''} onClick={()=>{setPlatformFilter(id);setSelected('')}}>{label}</button>)}</div></div>
+            <div className="inbox-filters"><div className="inbox-filter-row"><div className="search"><Search size={16}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="대화 검색"/></div><button className="secondary inbox-bulk" disabled={busy||!confirmableVisible.length} onClick={confirmVisible}><Check size={15}/>일괄 확인 {confirmableVisible.length||''}</button></div><div className="tabs channel-tabs">{[['all','전체'],['instagram','Instagram'],['tiktok','TikTok'],['naver','네이버'],['channel_talk','카카오']].map(([id,label])=><button key={id} className={platformFilter===id?'selected':''} onClick={()=>{setPlatformFilter(id);setSelected('')}}>{label}</button>)}</div></div>
             {visibleComments.map(c=><button className={'conversation '+(selected===c.id?'selected':'')} key={c.id} onClick={()=>setSelected(c.id)}><div className="row"><span className="row"><Channel platform={c.platform} small/><b>{c.author}</b></span><Badge status={c.status}/></div><p>{c.body}</p><small>{cName(c.client_id)} · {fmt(c.created_at)}</small></button>)}
             {!comments.length&&<Empty text="채널을 연결하면 실제 댓글과 상담이 여기에 표시됩니다."/>}
           </div>
@@ -379,7 +382,7 @@ export default function App(){
         </div>}
 
         {view==='settings'&&<>
-          <div className="panel setting-status"><div><h2>고객사별 채널 연결</h2><p className="muted">각 고객사마다 Instagram, 네이버 블로그, 카카오 상담 채널을 분리해서 관리합니다.</p></div><div className="row"><span className={'badge '+(config?.configured?'published':'failed')}>{config?.configured?'Supabase 연결됨':'Supabase 설정 필요'}</span><span className={'badge '+(config?.vault?'published':'failed')}>{config?.vault?'암호화 키 설정됨':'암호화 키 필요'}</span></div></div>
+          <div className="panel setting-status"><div><h2>고객사별 채널 연결</h2><p className="muted">각 고객사마다 Instagram, TikTok, 네이버 블로그, 카카오 상담 채널을 분리해서 관리합니다.</p></div><div className="row"><span className={'badge '+(config?.configured?'published':'failed')}>{config?.configured?'Supabase 연결됨':'Supabase 설정 필요'}</span><span className={'badge '+(config?.vault?'published':'failed')}>{config?.vault?'암호화 키 설정됨':'암호화 키 필요'}</span></div></div>
 
           {!data.clients.length&&<div className="info-box"><Building2 size={23}/><div><b>먼저 고객사를 등록하세요.</b><p>채널은 고객사별로 독립적으로 연결하고 관리합니다.</p></div></div>}
 
@@ -390,12 +393,13 @@ export default function App(){
                 {(()=>{const a=account(c.id,'instagram');return <div className="channel-manager"><div className="section-title"><Channel platform="instagram"/><span className={'badge '+(a?.status==='connected'?'published':'')}>{a?.status==='connected'?'연결됨':'미연결'}</span></div><p>{a?.username?'@'+a.username:'Instagram 인증 필요'}</p><button className="primary compact" disabled={!config?.instagram||busy} onClick={()=>run(async()=>{const d=await api('instagram/connect',{client_id:c.id});window.location.assign(d.url)})}><Instagram size={15}/>Instagram 인증</button></div>})()}
                 {(()=>{const a=account(c.id,'naver');return <div className="channel-manager"><div className="section-title"><Channel platform="naver"/><span className="badge">{a?.status==='connected'?'수집기 연결됨':a?.status==='waiting_for_collector'?'수집기 대기':'미설정'}</span></div><p>{a?.username||'블로그 ID 미등록'}</p><button className="secondary compact" onClick={()=>setModal({type:'naver',client:c,account:a})}><KeyRound size={15}/>블로그 수집기 설정</button></div>})()}
                 {(()=>{const a=account(c.id,'channel_talk');return <div className="channel-manager"><div className="section-title"><Channel platform="channel_talk"/><span className={'badge '+(a?.status==='connected'?'published':'')}>{a?.status==='connected'?'API 확인됨':a?.configured?'키 저장됨':'미설정'}</span></div><p>{a?.username||'채널톡 Access Key/Secret 필요'}</p><button className="secondary compact" disabled={!config?.vault} onClick={()=>setModal({type:'channel',client:c,account:a})}><KeyRound size={15}/>OpenAPI 키 설정</button></div>})()}
+                {(()=>{const a=account(c.id,'tiktok');return <div className="channel-manager"><div className="section-title"><Channel platform="tiktok"/><span className={'badge '+(a?.status==='connected'?'published':'')}>{a?.status==='connected'?'토큰 확인됨':a?.configured?'키 저장됨':'준비'}</span></div><p>{a?.username?'@'+a.username:'TikTok Business Messaging 권한 필요'}</p><button className="secondary compact" disabled={!config?.vault} onClick={()=>setModal({type:'tiktok',client:c,account:a})}><KeyRound size={15}/>Business API 설정</button></div>})()}
               </div>
             </section>)}
           </div>
 
           <div className="setup-grid">
-            <div className="info-box"><ShieldCheck size={23}/><div><b>채널별 처리 방식</b><p>Instagram 댓글/DM은 답변 작성·승인·전송, 네이버는 홈의 댓글/답글 알림 확인, 카카오는 채널톡 기반으로 분리합니다.</p></div></div>
+            <div className="info-box"><ShieldCheck size={23}/><div><b>채널별 처리 방식</b><p>Instagram 댓글/DM은 답변 작성·승인·전송, TikTok은 Business Messaging 권한 승인 후 DM/자동메시지 연동, 네이버는 댓글/답글 알림 확인, 카카오는 채널톡 기반으로 분리합니다.</p></div></div>
             <div className="info-box"><Zap size={23}/><div><b>네이버 로컬 수집기</b><p>정확한 .list_news 항목만 읽고, 확인한 동일 알림은 다시 새 항목으로 만들지 않습니다.</p></div></div>
           </div>
         </>}
@@ -411,11 +415,13 @@ export default function App(){
 
       {modal.type==='client'&&<form onSubmit={saveClient}><span className="eyebrow">CLIENT PROFILE</span><h2>{modal.item?'고객사 수정':'고객사 추가'}</h2><label>고객사명<input name="name" required defaultValue={modal.item?.name}/></label><label>업종<input name="category" defaultValue={modal.item?.category}/></label><label>브랜드 말투<input name="tone" defaultValue={modal.item?.tone}/></label><label>응대 정책<textarea name="policy" rows={5} defaultValue={modal.item?.policy}/></label><button className="primary full" disabled={busy}>저장</button></form>}
 
-      {modal.type==='post'&&<form onSubmit={savePost}><span className="eyebrow">CONTENT</span><h2>{modal.item?'콘텐츠 수정':'게시물 작성'}</h2><div className="form-grid"><label>고객사<select name="client_id" required defaultValue={modal.item?.client_id||(client==='all'?data.clients[0]?.id:client)}>{data.clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label><label>카테고리<select name="platform" defaultValue={modal.item?.platform||'instagram'}><option value="instagram">Instagram</option><option value="naver">네이버 블로그</option><option value="schedule_plan">예정</option><option value="schedule_general">일반 일정</option><option value="schedule_other">기타 일정</option></select></label></div><label>제목<input name="title" required defaultValue={modal.item?.title||''}/></label><label>본문 / 메모<textarea name="body" rows={8} defaultValue={modal.item?.body||''} placeholder="Instagram·블로그는 게시물 본문을, 일정 카테고리는 필요한 메모를 입력하세요."/></label><label>이미지 URL <small className="field-hint">Instagram 발행 시에만 필요</small><input name="image_url" type="url" placeholder="https://..." defaultValue={modal.item?.image_url||''}/></label><label>예정일<input name="scheduled_at" type="datetime-local" defaultValue={modal.presetDate||localInput(modal.item?.scheduled_at)}/></label><button className="primary full" disabled={busy}>저장</button></form>}
+      {modal.type==='post'&&<form onSubmit={savePost}><span className="eyebrow">CONTENT</span><h2>{modal.item?'콘텐츠 수정':'게시물 작성'}</h2><div className="form-grid"><label>고객사<select name="client_id" required defaultValue={modal.item?.client_id||(client==='all'?data.clients[0]?.id:client)}>{data.clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label><label>카테고리<select name="platform" defaultValue={modal.item?.platform||'instagram'}><option value="instagram">Instagram</option><option value="tiktok">TikTok</option><option value="naver">네이버 블로그</option><option value="schedule_plan">예정</option><option value="schedule_general">일반 일정</option><option value="schedule_other">기타 일정</option></select></label></div><label>제목<input name="title" required defaultValue={modal.item?.title||''}/></label><label>본문 / 메모<textarea name="body" rows={8} defaultValue={modal.item?.body||''} placeholder="Instagram·블로그는 게시물 본문을, 일정 카테고리는 필요한 메모를 입력하세요."/></label><label>이미지 URL <small className="field-hint">Instagram 발행 시에만 필요</small><input name="image_url" type="url" placeholder="https://..." defaultValue={modal.item?.image_url||''}/></label><label>예정일<input name="scheduled_at" type="datetime-local" defaultValue={modal.presetDate||localInput(modal.item?.scheduled_at)}/></label><button className="primary full" disabled={busy}>저장</button></form>}
 
       {modal.type==='naver'&&<form onSubmit={e=>{e.preventDefault();const b=Object.fromEntries(new FormData(e.currentTarget));run(async()=>{await api('integrations/naver',{client_id:modal.client.id,...b});await refresh();setModal(null);setToast('네이버 수집기 설정을 저장했습니다.')})}}><Channel platform="naver"/><h2>네이버 로컬 수집기</h2><p className="muted">MOA에는 네이버 비밀번호를 저장하지 않습니다.</p><label>네이버 블로그 ID<input name="blog_id" required defaultValue={modal.account?.username}/></label><div className="notice">1) 이 PC에서 로컬 수집기를 실행합니다.<br/>2) 수집기가 연 브라우저에서 네이버에 직접 로그인합니다.<br/>3) 로그인 세션은 이 PC에만 남고, 수집된 댓글 데이터만 MOA로 전송합니다.</div><button className="primary full" disabled={busy}>저장</button></form>}
 
       {modal.type==='channel'&&<form onSubmit={e=>{e.preventDefault();const b=Object.fromEntries(new FormData(e.currentTarget));run(async()=>{await api('integrations/channel-talk',{client_id:modal.client.id,...b,test:'true'});await refresh();setModal(null);setToast('채널톡 OpenAPI 설정을 확인했습니다.')})}}><Channel platform="channel_talk"/><h2>채널톡 OpenAPI</h2><p className="muted">채널톡 → 보안 및 개발 → OpenAPI에서 발급한 키를 입력합니다.</p><label>채널 이름<input name="channel_name" defaultValue={modal.account?.username}/></label><label>Access Key<input name="access_key" required autoComplete="off"/></label><label>Access Secret<input name="access_secret" type="password" required autoComplete="new-password"/></label><p className="safety-note"><LockKeyhole size={14}/>Secret은 AES-256-GCM으로 암호화해 Supabase에 저장합니다.</p><button className="primary full" disabled={busy}>저장하고 API 확인</button></form>}
+
+      {modal.type==='tiktok'&&<form onSubmit={e=>{e.preventDefault();const b=Object.fromEntries(new FormData(e.currentTarget));run(async()=>{await api('integrations/tiktok',{client_id:modal.client.id,...b,test:'true'});await refresh();setModal(null);setToast('TikTok Business API 토큰을 확인했습니다.')})}}><Channel platform="tiktok"/><h2>TikTok Business API</h2><p className="muted">Business Messaging API 접근 승인을 받은 TikTok for Business 앱의 Access Token과 Business Account ID를 저장합니다.</p><label>TikTok 사용자명<input name="username" placeholder="@계정명" defaultValue={modal.account?.username}/></label><label>Business Account ID<input name="business_id" required defaultValue={modal.account?.external_id}/></label><label>Access Token<input name="access_token" type="password" required autoComplete="new-password"/></label><div className="notice">현재 MOA는 TikTok 연결정보·콘텐츠 일정·댓글함 구조까지 준비합니다. 실제 DM 송수신과 댓글→DM 자동화는 TikTok Business Messaging 권한 및 해당 계정 기능 제공 여부가 확인된 뒤 활성화됩니다.</div><p className="safety-note"><LockKeyhole size={14}/>Access Token은 암호화해 Supabase에 저장합니다.</p><button className="primary full" disabled={busy}>저장하고 토큰 확인</button></form>}
 
       {modal.type==='detail'&&<><Channel platform={modal.item.platform}/><h2>{modal.item.title}</h2><div className="row"><span className="muted">{cName(modal.item.client_id)} · {modal.item.scheduled_at?'예정 '+fmt(modal.item.scheduled_at):'날짜 미정'}</span><Badge status={modal.item.status}/></div><div className="post-body">{modal.item.body}</div><div className="detail-buttons">{['draft','planned'].includes(modal.item.status)&&<button className="primary" onClick={()=>setModal({type:'post',item:modal.item})}><CalendarDays size={16}/>내용·날짜 수정</button>}{modal.item.platform==='instagram'&&['draft','planned','failed'].includes(modal.item.status)&&<button className="publish-instagram" disabled={busy||!modal.item.image_url} onClick={()=>publishInstagramPost(modal.item)}><Instagram size={16}/>Instagram에 발행</button>}<button className="secondary" onClick={()=>navigator.clipboard.writeText(modal.item.title+'\n\n'+modal.item.body).then(()=>setToast('원고를 복사했습니다.'))}><Copy size={16}/>원고 복사</button>{modal.item.platform==='naver'&&<a className="secondary" href="https://blog.naver.com" target="_blank" rel="noreferrer">블로그 열기 <ExternalLink size={15}/></a>}</div>{modal.item.platform==='instagram'&&!modal.item.image_url&&['draft','planned','failed'].includes(modal.item.status)&&<p className="publish-hint">발행하려면 먼저 수정에서 공개 HTTPS 이미지 URL을 입력하세요.</p>}</>}
 
