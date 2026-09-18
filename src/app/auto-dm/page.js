@@ -14,7 +14,7 @@ export default function AutoDmPage(){
   const [history,setHistory]=useState([]);
   const [account,setAccount]=useState(null);
   const [selectedId,setSelectedId]=useState('');
-  const [form,setForm]=useState({enabled:false,keywords:'오디션',match:'contains',message:''});
+  const [form,setForm]=useState({enabled:false,keywords:'오디션',match:'contains',message:'',commentReply:''});
   const [busy,setBusy]=useState(false);
   const [loading,setLoading]=useState(true);
   const [toast,setToast]=useState('');
@@ -87,7 +87,8 @@ export default function AutoDmPage(){
       enabled:!!post.auto_dm_enabled,
       keywords:(post.auto_dm_keywords||[]).join(', ')||'오디션',
       match:post.auto_dm_match||'contains',
-      message:post.auto_dm_message||''
+      message:post.auto_dm_message||'',
+      commentReply:post.auto_dm_comment_reply||''
     });
   }
 
@@ -102,7 +103,8 @@ export default function AutoDmPage(){
         enabled:form.enabled,
         keywords:form.keywords,
         match:form.match,
-        message:form.message
+        message:form.message,
+        comment_reply:form.commentReply
       });
       await loadPosts(clientId,{quiet:true});
       setToast(form.enabled?'이 게시물의 자동 DM 설정을 저장했습니다. 다른 게시물과 독립적으로 동작합니다.':'이 게시물의 자동 DM을 껐습니다.');
@@ -168,7 +170,12 @@ export default function AutoDmPage(){
             <textarea maxLength={1000} rows={8} value={form.message} onChange={e=>setForm(v=>({...v,message:e.target.value}))} placeholder={'안녕하세요! 요청하신 정보를 보내드려요.\n\n신청 👉 https://...'}/>
           </label>
 
-          <div className={styles.preview}><span>이 게시물의 발송 미리보기</span><div><b>댓글: {(form.keywords.split(',')[0]||'오디션').trim()}</b><p>{form.message||'저장한 메시지가 이곳에 표시됩니다.'}</p></div></div>
+          <label className={styles.field}>DM 발송 후 자동 대댓글 <small>선택사항 · 이 게시물 전용 · {form.commentReply.length}/2200</small>
+            <textarea maxLength={2200} rows={4} value={form.commentReply} onChange={e=>setForm(v=>({...v,commentReply:e.target.value}))} placeholder={'DM으로 자세한 정보를 보내드렸어요 😊 확인해 주세요!'}/>
+          </label>
+          <p className={styles.replyHint}>비워두면 대댓글은 달지 않습니다. 입력하면 자동 DM 전송이 성공한 뒤, 댓글 작성자의 원댓글에 이 문구를 대댓글로 남깁니다.</p>
+
+          <div className={styles.preview}><span>이 게시물의 발송 미리보기</span><div><b>댓글: {(form.keywords.split(',')[0]||'오디션').trim()}</b><p>{form.message||'저장한 메시지가 이곳에 표시됩니다.'}</p>{form.commentReply&&<small className={styles.previewReply}>↳ 대댓글: {form.commentReply}</small>}</div></div>
 
           <button className={styles.save} disabled={busy}><Send size={16}/>{busy?'저장 중...':'이 게시물 자동 DM 저장'}</button>
           <p className={styles.ruleNote}>다른 게시물의 설정은 변경되지 않습니다. 같은 댓글에는 자동 DM을 한 번만 시도합니다.</p>
@@ -177,7 +184,7 @@ export default function AutoDmPage(){
             <div className={styles.historyTitle}><div><span className={styles.eyebrow}>DELIVERY STATUS</span><h3>이 게시물 발송 현황</h3></div><b>{selectedHistory.length}건</b></div>
             {selectedHistory.length?<div className={styles.historyList}>{selectedHistory.map(x=><div className={styles.historyRow} key={x.id}>
               <span className={styles.userIcon}><UserRound size={15}/></span>
-              <div className={styles.historyMain}><b>@{x.author}</b><p>{x.body}</p><small>키워드 · {x.keyword||'-'} · {fmt(x.sent_at||x.failed_at||x.created_at)}</small>{x.error&&<em>{x.error}</em>}</div>
+              <div className={styles.historyMain}><b>@{x.author}</b><p>{x.body}</p><small>키워드 · {x.keyword||'-'} · {fmt(x.sent_at||x.failed_at||x.created_at)}</small>{x.comment_reply&&<small className={styles.replyStatus}>대댓글 · {x.comment_reply.sent?'전송 완료':'실패'}{x.comment_reply.text?' · '+x.comment_reply.text:''}</small>}{x.comment_reply?.error&&<em>{x.comment_reply.error}</em>}{x.error&&<em>{x.error}</em>}</div>
               <span className={`${styles.deliveryBadge} ${x.status==='sent'?styles.deliverySent:styles.deliveryFailed}`}>{x.status==='sent'?'전송 완료':'실패'}</span>
             </div>)}</div>:<div className={styles.historyEmpty}>아직 이 게시물에서 자동 DM을 보낸 사용자가 없습니다.</div>}
           </div>
